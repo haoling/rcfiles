@@ -42,22 +42,32 @@
 # コマンド補完
   autoload -Uz compinit
   # コマンドが出力する補完関数を ~/.cache に生成して使う
-    comp_cache=~/.cache/zsh/completion
-    mkdir -p $comp_cache
-    fpath=($comp_cache $fpath)
-    for cmd in kubectl docker; do
-      (( $+commands[$cmd] )) || continue
-      # 補完ファイルがない、またはコマンドの方が新しいときだけ作り直す
-      if [[ ! -s $comp_cache/_$cmd || $commands[$cmd] -nt $comp_cache/_$cmd ]]; then
-        # 生成に失敗したときは空ファイルを残さない
-        if $cmd completion zsh >| $comp_cache/_$cmd.tmp 2>/dev/null && [[ -s $comp_cache/_$cmd.tmp ]]; then
-          mv -f $comp_cache/_$cmd.tmp $comp_cache/_$cmd
-        else
-          rm -f $comp_cache/_$cmd.tmp
+  # ~/.zshrc の後半で PATH が追加されることがあるため、生成は最初のプロンプト表示時に行う
+    _rcfiles_comp_cache=~/.cache/zsh/completion
+    mkdir -p $_rcfiles_comp_cache
+    fpath=($_rcfiles_comp_cache $fpath)
+    _rcfiles_gen_completion() {
+      local cmd
+      for cmd in kubectl docker; do
+        (( $+commands[$cmd] )) || continue
+        # 補完ファイルがない、またはコマンドの方が新しいときだけ作り直す
+        if [[ ! -s $_rcfiles_comp_cache/_$cmd || $commands[$cmd] -nt $_rcfiles_comp_cache/_$cmd ]]; then
+          # 生成に失敗したときは空ファイルを残さない
+          if $cmd completion zsh >| $_rcfiles_comp_cache/_$cmd.tmp 2>/dev/null && [[ -s $_rcfiles_comp_cache/_$cmd.tmp ]]; then
+            mv -f $_rcfiles_comp_cache/_$cmd.tmp $_rcfiles_comp_cache/_$cmd
+            # compinit 後に生成したので、このシェルにも登録する
+            unfunction _$cmd 2>/dev/null
+            autoload -Uz _$cmd
+            compdef _$cmd $cmd
+          else
+            rm -f $_rcfiles_comp_cache/_$cmd.tmp
+          fi
         fi
-      fi
-    done
-    unset comp_cache cmd
+      done
+      add-zsh-hook -d precmd _rcfiles_gen_completion
+    }
+    autoload -Uz add-zsh-hook
+    add-zsh-hook precmd _rcfiles_gen_completion
   compinit -u
   # コマンド補完の際にピーピー鳴らさない
     setopt nolistbeep
