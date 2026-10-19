@@ -1,0 +1,37 @@
+#!/bin/bash
+
+if [ -z "$*" ]; then
+  echo -n "Enter ssh arguments: "
+  read input
+  $0 $input
+  exit
+fi
+
+NAME_DEFAULT=$*
+SKIP=0
+for i in `seq 1 1 9`; do
+  T=$(eval echo \"\$$i\")
+  if [ $SKIP -ne 0 ]; then
+    SKIP=0
+    continue
+  fi
+  if [ "${T:0:1}" = "-" ]; then
+    SKIP=1
+    continue;
+  fi
+  NAME_DEFAULT=$T
+  break
+done
+
+if [ -z "$NAME" ]; then
+  echo -n "Enter session name [${NAME_DEFAULT}]: "
+  read NAME
+fi
+
+if [ -z "$NAME" ]; then
+  NAME=$NAME_DEFAULT
+fi
+
+tmuxopt=
+if [ ${LANG,,}='ja_jp.utf8' ]; then tmuxopt="$tmuxopt -u"; fi
+tmux ${tmuxopt} new-session -d -s "$NAME" "ssh $*" \; set-option -t "$NAME" default-command "ssh $*" \; attach

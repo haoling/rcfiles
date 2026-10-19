@@ -1,0 +1,37 @@
+[color]
+	ui = auto
+
+[alias]
+	st = status
+	history = log --pretty=format:\"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset\" --abbrev-commit --date=relative
+
+[push]
+	default = simple
+[merge]
+	ff = false
+[user]
+	name = Haoling
+	email = noreply-haoling@fei-yen.jp
+	signingkey = C88E1EF9F9927FB5F30D831169B8B1EFBA2A76F3
+[core]
+	excludesfile = ~/.gitignore_global
+[difftool "sourcetree"]
+	cmd = opendiff \"$LOCAL\" \"$REMOTE\"
+	path = 
+[mergetool "sourcetree"]
+	cmd = /Applications/Sourcetree.app/Contents/Resources/opendiff-w.sh \"$LOCAL\" \"$REMOTE\" -ancestor \"$BASE\" -merge \"$MERGED\"
+	trustExitCode = true
+[filter "lfs"]
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+[gpg]
+	program = gpg
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
+[credential]
+	helper = 
+	helper = /usr/local/share/gcm-core/git-credential-manager

@@ -1,0 +1,14 @@
+#!/bin/bash
+dir=$(cd $(dirname $0);pwd)
+screenopt="-U"
+if [ -f ${dir}/.myscreen.local ]; then . ${dir}/.myscreen.local; fi
+if [ $LANG -eq 'ja_JP.utf8' ]; then screenopt="$screenopt -U"; fi
+/usr/bin/screen -S "$(whoami)" -x $screenopt
+if [ $? -ne 0 ] ; then
+	cd $dir
+	
+	zshpath=`which zsh`
+	if [ $? -eq 0 ]; then screenopt="$screenopt -s $zshpath"; fi
+	
+	HOME=$dir /usr/bin/screen -S "$(whoami)" -d -R -c "$dir/.screenrc" $screenopt
+fi

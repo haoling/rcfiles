@@ -1,0 +1,112 @@
+#!/bin/bash
+. $(cd $(dirname $0);pwd)/.rcfiles/.myfunc
+dir=$(cd $(dirname $0);pwd)
+cd $dir
+tmuxbin=/usr/bin/tmux
+tmuxopt="-f ${dir}/.tmux.conf"
+if [ -f ${dir}/.mytmux.local ]; then . ${dir}/.mytmux.local; fi
+if [ $LANG = 'ja_JP.utf8' ]; then tmuxopt="$tmuxopt -u"; fi
+
+
+while getopts S:x: OPT
+do
+  case $OPT in
+    "S" ) SESSION_NAME="$OPTARG" ;;
+    "x" ) RUN_COMMAND="$OPTARG" ;;
+  esac
+done
+
+while [ 1 -eq 1 ]; do
+	clear
+	LinesToArray_func "$($tmuxbin list-sessions -F '#{session_name}')" sessions
+	
+	if [ -z "$SESSION_NAME" ]; then
+		echo Select to resume session or choice 0 to create session
+		
+		for i in `seq 1 ${#sessions[*]}`; do 
+			if [ -z ${sessions[`expr $i - 1`]} ]; then break; fi
+			echo " "[$i] ${sessions[`expr $i - 1`]};
+		done
+		echo " "[ ] Let blank and press enter to resume last session or then create new session if no sessions.
+		#echo [k] kill session
+		
+		read c
+		if [ -z $c ]; then c=-1; fi
+		if [ "$c" = "-" ]; then exit; fi
+		let c=c-1
+		
+		case $c in
+		-2)
+			if [ ${#sessions[*]} -gt 0 ]; then
+				$tmuxbin ${tmuxopt} attach
+			else
+				echo Enter session name.
+				echo let blank and press enter then create session named your login name.
+				read n
+				if [ -z $n ]; then n=`whoami`; fi
+				
+				HOME=$dir $tmuxbin $tmuxopt new-session -d -s __set-option
+				
+				zshpath=`which zsh`
+				if [ $? -eq 0 ]; then $tmuxbin set-option -g default-shell ${zshpath}; fi
+				
+				HOME=$dir $tmuxbin new-session -d -s $n
+				$tmuxbin kill-session -t __set-option
+				$tmuxbin $tmuxopt attach
+			fi
+			;;
+			
+		-1)
+			echo Enter session name.
+			echo let blank and press enter then create session named your login name.
+			read n
+			if [ -z $n ]; then n=`whoami`; fi
+			
+			HOME=$dir $tmuxbin $tmuxopt new-session -d -s __set-option
+			
+			zshpath=`which zsh`
+			if [ $? -eq 0 ]; then $tmuxbin set-option -g default-shell ${zshpath}; fi
+			
+			HOME=$dir $tmuxbin new-session -d -s $n
+			$tmuxbin kill-session -t __set-option
+			$tmuxbin $tmuxopt attach
+			;;
+			
+		*)
+			if [ -n ${sessions[$c]} ]; then
+				$tmuxbin $tmuxopt attach-session -t ${sessions[$c]}
+			fi
+			;;
+		esac
+		echo $c
+	else
+		# Ç‹Ç∆Ç‡Ç…ìÆÇ¢ÇƒÇ¢Ç»Ç¢ÉRÅ[Éh
+		echo $SESSION_NAME
+		echo $RUN_COMMAND
+		
+		unset c
+		for i in `seq 1 ${#screen_ls}`; do 
+			if [ -z "${screen_ls[`expr $i - 1`]}" ]; then break; fi
+			if [ "${screen_ls[`expr $i - 1`]#*.}" = "$SESSION_NAME" ]; then
+				c=`expr $i - 1`
+				break
+			fi;
+		done
+		
+		if [ -n "$c" ]; then
+			screen ${screenopt} -x -S "${screen_ls[$c]}"
+		else
+			HOME=$dir $tmuxbin $tmuxopt new-session -d -s __set-option
+			
+			zshpath=`which zsh`
+			if [ $? -eq 0 ]; then $tmuxbin set-option -g default-shell ${zshpath}; fi
+			
+			HOME=$dir $tmuxbin new-session -d -s "$SESSION_NAME" "$RUN_COMMAND"
+			$tmuxbin kill-session -t __set-option
+			$tmuxbin $tmuxopt attach
+		fi
+		
+		read c
+		break;
+	fi
+done;

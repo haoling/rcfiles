@@ -1,0 +1,96 @@
+#!/bin/bash
+. $(cd $(dirname $0);pwd)/.rcfiles/.myfunc
+dir=$(cd $(dirname $0);pwd)
+screenopt=""
+if [ -f ${dir}/.myscreen.local ]; then . ${dir}/.myscreen.local; fi
+if [ "$LANG" = "ja_JP.utf8" ]; then screenopt="$screenopt -U"; fi
+zshpath=`which zsh`
+if [ $? -eq 0 ]; then screenopt="$screenopt -s $zshpath"; fi
+
+
+while getopts S:x: OPT
+do
+  case $OPT in
+    "S" ) SESSION_NAME="$OPTARG" ;;
+    "x" ) RUN_COMMAND="$OPTARG" ;;
+  esac
+done
+
+while [ 1 -eq 1 ]; do
+	clear
+	LinesToArray_func "$(ls -tr1 --color=none /var/run/screen/S-`whoami`)" screen_ls
+
+	if [ -z "$SESSION_NAME" ]; then
+		echo Select to resume session or choice 0 to create session
+
+		for i in `seq 1 ${#screen_ls}`; do 
+			if [ -z "${screen_ls[`expr $i - 1`]}" ]; then break; fi
+			echo " "[$i] ${screen_ls[`expr $i - 1`]};
+		done
+		echo " "[ ] Let blank and press enter to resume first last session or if there were no session then create new session.
+		#echo [k] kill session
+
+		read c
+		if [ -z $c ]; then c=-1; fi
+		if [ "$c" = "-" ]; then exit; fi
+		let c=c-1
+
+		case $c in
+		-2)
+			if [ ${#screen_ls} -gt 0 ]; then
+				screen ${screenopt} -x -S ${screen_ls[((${#screen_ls[*]}-1))]}
+			else
+				echo Enter session name.
+				echo let blank and press enter then create session named your login name.
+				read n
+				if [ -z $n ]; then n=`whoami`; fi
+				HOME=$dir screen ${screenopt} -c "$dir/.screenrc" -S $n
+			fi
+			;;
+			
+		-1)
+			echo Enter session name.
+			echo let blank and press enter then create session named your login name.
+			read n
+			if [ -z $n ]; then n=`whoami`; fi
+			HOME=$dir screen ${screenopt} -c "$dir/.screenrc" -S "$n"
+			;;
+			
+		*)
+			if [ -n "${screen_ls[$c]}" ]; then
+				screen ${screenopt} -x -S "${screen_ls[$c]}"
+			fi
+			;;
+		esac
+		echo $c
+		
+	else
+		echo $SESSION_NAME
+		echo $RUN_COMMAND
+		
+		unset c
+		for i in `seq 1 ${#screen_ls}`; do 
+			if [ -z "${screen_ls[`expr $i - 1`]}" ]; then break; fi
+			if [ "${screen_ls[`expr $i - 1`]#*.}" = "$SESSION_NAME" ]; then
+				c=`expr $i - 1`
+				break
+			fi;
+		done
+		
+		if [ -n "$c" ]; then
+			screen ${screenopt} -x -S "${screen_ls[$c]}"
+		else
+			if [ ! -d "$dir/.myscreen2.tmp" ]; then mkdir "$dir/.myscreen2.tmp"; fi
+			rm "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME" 2>/dev/null
+			echo 'source "'$dir'/.screenrc"' > "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME"
+			echo 'bind "^c" screen "'$RUN_COMMAND'"' >> "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME"
+			echo 'bind "c" screen "'$RUN_COMMAND'"' >> "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME"
+			echo 'zombie "^MR"' >> "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME"
+			HOME=$dir screen ${screenopt} -c "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME" -S "$SESSION_NAME" "$RUN_COMMAND"
+			# rm "$dir/.myscreen2.tmp/.screenrc.$SESSION_NAME" 2>/dev/null
+		fi
+		
+		read c
+		break;
+	fi;
+done;

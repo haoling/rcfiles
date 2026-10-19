@@ -1,0 +1,4 @@
+# ログを取る
+  #logfile "/cofs/logs/screen-%n"
+  #log on
+

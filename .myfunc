@@ -1,0 +1,22 @@
+#!/bin/bash
+
+function LinesToArray_func()
+{
+	local Lines="$1"
+	local out_Array="$2"
+	local line
+	local i
+	local lf=`echo -e "\nx"`; lf="${lf:0:1}"
+	
+	eval unset $out_Array
+	
+	i="0"
+	while true; do
+		line="${Lines%%$lf*}"
+		if [ "$line" != "" ];then eval $out_Array[$i]="'$line'" ;fi
+		if [ "$line" == "$Lines" ];then break ;fi
+		i=`expr $i + 1`
+		Lines=${Lines:`expr ${#line} + 1`} #// next line
+	done
+}
+

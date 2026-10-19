@@ -1,0 +1,20 @@
+#!/usr/bin/env php
+<?php
+$dir = getcwd();
+chdir($dir);
+$tmuxbin = '/usr/bin/tmux';
+$tmuxopt = "-f $dir/.tmux.conf";
+if(file_exists("$dir/.mytmux.local")) require_once("$dir/.mytmux.local");
+
+exec("$tmuxbin has-session", $out, $ret);
+if($ret == 0) {
+	exec("$tmuxbin $tmuxopt attach");
+} else {
+	exec("HOME=$dir $tmuxbin $tmuxopt new-session -d -s __set-option");
+	$zshpath=exec("which zsh", $out, $ret);
+	if(! $ret) exec("$tmuxbin set-option -g default-shell ${zshpath}");
+	
+	exec("HOME=$dir $tmuxbin new-session -d");
+	exec("$tmuxbin kill-session -t __set-option");
+	exec("$tmuxbin $tmuxopt attach");
+}

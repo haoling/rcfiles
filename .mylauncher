@@ -1,0 +1,66 @@
+#!/bin/bash
+dir=$(cd $(dirname $0);pwd)
+zshpath=`which zsh`
+IFS=$'\n'
+EXECUTING=
+
+trap signalCatch 2
+function signalCatch {
+	if [ -z $EXECUTING ]; then exit; fi
+}
+
+while [ 1 -eq 1 ]; do
+	clear
+	launchers_ls=($(ls -tr1 --color=none ~/.mylaunchers))
+
+	echo Select to launch command
+	echo \ \ Choose 0 to enter shell
+	echo \ \ Push enter without any choice, run latest command
+	echo \ 
+
+	for i in `seq 1 ${#launchers_ls}`; do 
+		if [ -z ${launchers_ls[`expr $i - 1`]} ]; then break; fi
+		echo " "[$i] ${launchers_ls[`expr $i - 1`]};
+	done
+
+	read c
+	if [ -z $c ]; then c=-1; fi
+	if [ "$c" = "-" ]; then exit; fi
+	let c=c-1
+
+	case $c in
+	-2)
+		if [ ${#launchers_ls} -gt 0 ]; then
+			EXECUTING=1
+			~/.mylaunchers/${launchers_ls[((${#launchers_ls[*]}-1))]}
+			EXECUTING=
+			if [ $? -ne 0 ]; then
+				echo Some error occurs while running command.
+				read c
+			fi
+		fi
+		;;
+		
+	-1)
+		if [ -f /bin/zsh ]; then
+			/bin/zsh
+		else
+			/bin/bash
+		fi
+		;;
+	*)
+		if [ -n ${launchers_ls[$c]} ]; then
+			touch ~/.mylaunchers/${launchers_ls[$c]}
+			EXECUTING=1
+			~/.mylaunchers/${launchers_ls[$c]}
+			EXECUTING=
+			if [ $? -ne 0 ]; then
+				echo Some error occurs while running command.
+				read c
+			fi
+		fi
+		;;
+	esac
+	echo $c
+done;
+

@@ -1,0 +1,13 @@
+# ホスト固有の設定
+.zshrc.local
+.gitconfig.local
+
+# Claude Code
+.claude/
+
+# スクリプトが生成する一時ディレクトリ
+.myscreen2.tmp/
+.mytmux3.tmp/
+
+# OS
+.DS_Store

@@ -1,0 +1,42 @@
+# エスケープをCtrl+Zに変更
+  escape 
+
+# ベル時に画面を点滅させない
+  vbell off
+
+# なんだっけ？
+  altscreen on
+
+# SSHのウィンドウタイトルを変更
+  hardstatus lastline '%{= kG}[ %{G}%H %{g}] %{=kw}%?%-w%?%{r}%{W}%n%f%t%?%u%?%{r}%{w}%?%+w%?%? %{g}]'
+
+# F1～F10でウィンドウを切り替え
+  bindkey -k k1 select 0
+  bindkey -k k2 select 1
+  bindkey -k k3 select 2
+  bindkey -k k4 select 3
+  bindkey -k k5 select 4
+  bindkey -k k6 select 5
+  bindkey -k k7 select 6
+  bindkey -k k8 select 7
+  bindkey -k k9 select 8
+  bindkey -k k; select 9
+  bindkey "^[OP" select 0
+  bindkey "^[OQ" select 1
+  bindkey OR select 2
+  bindkey OS select 3
+#  bindkey "^[" next
+
+# Ctrl+PgUp、Ctrl+PgDnでページ切り替え
+#  bindkey "5~" next
+
+# スクロールバックの行数
+  defscrollback 99999
+
+# フロー制御を無効にする
+  defflow off
+
+
+
+# ローカル設定を読み込む
+  source "$HOME/.screenrc.local"

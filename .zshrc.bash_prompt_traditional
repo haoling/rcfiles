@@ -1,0 +1,4 @@
+PROMPT="%{${fg[blue]}%}[%n@%m %1~%s]%(!.#.$) %{${reset_color}%}"
+PROMPT2="%{${fg[blue]}%}%_> %{${reset_color}%}"
+SPROMPT="%{${fg[red]}%}correct: %R -> %r [nyae]? %{${reset_color}%}"
+RPROMPT=

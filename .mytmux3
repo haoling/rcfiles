@@ -1,0 +1,87 @@
+#!/bin/bash
+. $(cd $(dirname $0);pwd)/.rcfiles/.myfunc
+dir=$(cd $(dirname $0);pwd)
+cd $dir
+tmuxbin=/usr/bin/tmux
+
+
+SESSION_NAME=`whoami`
+NOREPEAT=0
+while getopts S:f:qx: OPT
+do
+  case $OPT in
+    "S" ) SESSION_NAME="$OPTARG" ;;
+    "f" ) CONF_FILE="$OPTARG" ;;
+    "q" ) NOREPEAT=1 ;;
+    "x" ) RUN_COMMAND="$OPTARG" ;;
+  esac
+done
+
+if [ -f ${dir}/.mytmux.local ]; then . ${dir}/.mytmux.local; fi
+if [ ${LANG,,}='ja_jp.utf8' ]; then tmuxopt="$tmuxopt -u"; fi
+
+function action_tmux() {
+	#clear
+	LinesToArray_func "$($tmuxbin list-sessions -F '#{session_name}' 2>/dev/null)" sessions
+	
+	if [ ${#sessions[*]} -eq 0 ]; then
+		tmuxcmd="new-session -d -s \"`whoami`\""
+		zshpath=`which zsh`
+		
+		if [ -n "${zshpath}" ]; then 
+			HOME=$dir SHELL=${zshpath} $tmuxbin -f ${dir}/.tmux.conf $tmuxopt $tmuxcmd
+		else
+			HOME=$dir $tmuxbin -f ${dir}/.tmux.conf $tmuxopt $tmuxcmd
+		fi
+	fi
+	
+	if [ -z "${CONF_FILE}" -a -z "${RUN_COMMAND}" ]; then
+		$tmuxbin -f ${dir}/.tmux.conf ${tmuxopt} attach \; choose-session
+	else
+		unset c
+		for i in `seq 1 ${#sessions[*]}`; do 
+			if [ -z "${sessions[`expr $i - 1`]}" ]; then break; fi
+			if [ "${sessions[`expr $i - 1`]}" = "$SESSION_NAME" ]; then
+				c=`expr $i - 1`
+				break
+			fi;
+		done
+		
+		if [ -n "$c" ]; then
+			tmux attach -t "${sessions[$c]}"
+		else
+			if [ -n "${RUN_COMMAND}" ]; then
+				CONF_FILE="$dir/.mytmux3.tmp/.tmuxconf.$SESSION_NAME"
+				if [ ! -d "$dir/.mytmux3.tmp" ]; then mkdir "$dir/.mytmux3.tmp"; fi
+				rm "${CONF_FILE}" 2>/dev/null
+				echo "new -s \"${SESSION_NAME}\" \"${RUN_COMMAND}\"" >> "${CONF_FILE}"
+				echo "set-option -t \"${SESSION_NAME}\" default-command \"${RUN_COMMAND}\"" >> "${CONF_FILE}"
+			fi
+			
+			HOME=$dir $tmuxbin $tmuxopt source "${CONF_FILE}"
+		fi
+	fi
+}
+
+function action_end() {
+	echo 
+	echo Client detached.
+	echo Press any key to choose other session or create new session.
+	echo Or press Ctrl-C or input "-" to exit.
+	echo Press s to new ssh session.
+	read c
+	if [ "$c" = "-" ]; then exit; fi
+	if [ "$c" = "s" ]; then $dir/.tmuxssh; action_end; return; fi
+	if [ "$c" = "0" ]; then eval $SHELL; action_end; fi
+
+	action_tmux
+}
+
+action_tmux
+if [ ${NOREPEAT} -eq 1 ]; then
+	break
+fi
+
+while [ 1=1 ]; do
+	action_end
+done

@@ -1,0 +1,195 @@
+# ホストごとの設定は、「~/.zshrc」か「~/.zshrc.local」に書くこと！
+
+
+
+# コマンド履歴の設定
+  HISTFILE=~/.zsh_history
+  HISTSIZE=10000
+  SAVEHIST=10000
+  # 同じコマンドは覚えない
+    setopt hist_ignore_dups
+  # 複数のターミナルで履歴を共有する
+    setopt share_history
+
+# コマンド履歴の検索
+  autoload history-search-end
+  zle -N history-beginning-search-backward-end history-search-end
+  zle -N history-beginning-search-forward-end history-search-end
+  bindkey "[A" history-beginning-search-backward-end
+  bindkey "[B" history-beginning-search-forward-end 
+  # "ls -"と入力してCtrl+Pを入力すると、過去の履歴が表示される
+  # 履歴はCtrl+PとCtrl+Nで行き来できる
+
+  # Ctrl-Wで/（スラッシュ）までを削除する
+  tcsh-backward-delete-word() {
+    local WORDCHARS="${WORDCHARS:s#/#}"
+    zle backward-delete-word
+  }
+  zle -N tcsh-backward-delete-word
+  bindkey "^W" tcsh-backward-delete-word
+  bindkey "" tcsh-backward-delete-word
+
+# キーバインドを変更
+  bindkey "[3~" delete-char
+  bindkey "" backward-delete-char
+  bindkey "" backward-delete-char
+  bindkey "[1~" beginning-of-line
+  bindkey "[4~" end-of-line
+
+# The following lines were added by compinstall
+  zstyle :compinstall filename '~/.zshrc'
+
+# コマンド補完
+  autoload -Uz compinit
+  # コマンドが出力する補完関数を ~/.cache に生成して使う
+    comp_cache=~/.cache/zsh/completion
+    mkdir -p $comp_cache
+    fpath=($comp_cache $fpath)
+    for cmd in kubectl docker; do
+      (( $+commands[$cmd] )) || continue
+      # 補完ファイルがない、またはコマンドの方が新しいときだけ作り直す
+      if [[ ! -s $comp_cache/_$cmd || $commands[$cmd] -nt $comp_cache/_$cmd ]]; then
+        # 生成に失敗したときは空ファイルを残さない
+        if $cmd completion zsh >| $comp_cache/_$cmd.tmp 2>/dev/null && [[ -s $comp_cache/_$cmd.tmp ]]; then
+          mv -f $comp_cache/_$cmd.tmp $comp_cache/_$cmd
+        else
+          rm -f $comp_cache/_$cmd.tmp
+        fi
+      fi
+    done
+    unset comp_cache cmd
+  compinit -u
+  # コマンド補完の際にピーピー鳴らさない
+    setopt nolistbeep
+  # 色つき補完
+    zstyle ':completion:*' list-colors 'no=00' 'fi=00' 'di=01;34' 'ln=01;36' 'pi=40;33' 'so=01;35' 'bd=40;33;01' 'cd=40;33;01' 'or=40;31;01' 'ex=01;32' '*.tar=01;31' '*.tgz=01;31' '*.arj=01;31' '*.taz=01;31' '*.lzh=01;31' '*.zip=01;31' '*.z=01;31' '*.Z=01;31' '*.gz=01;31' '*.bz2=01;31' '*.deb=01;31' '*.rpm=01;31' '*.jpg=01;35' '*.png=01;35' '*.gif=01;35' '*.bmp=01;35' '*.ppm=01;35' '*.tga=01;35' '*.xbm=01;35' '*.xpm=01;35' '*.tif=01;35' '*.png=01;35' '*.mpg=01;35' '*.avi=01;35' '*.fli=01;35' '*.gl=01;35' '*.dl=01;35'
+  # エイリアスの補完
+    setopt complete_aliases
+  # 補完候補のカーソル選択を有効に
+    zstyle ':completion:*:default' menu select=1
+  # 小文字に対して大文字も補完する
+    zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+
+
+
+# プロンプトを $ に変更
+  PROMPT="%(!.#.$) "
+
+# 画面右側にカレントディレクトリに表示
+  RPROMPT="[%~]"
+
+# ターミナルのタイトルを変更
+  case "${TERM}" in
+  kterm*|xterm)
+    precmd() {
+      echo -ne "\033]0;${USER}@${HOST%%.*}:${PWD}\007"
+    }
+    ;;
+  esac
+
+# ディレクトリ移動の履歴
+  setopt auto_pushd
+  #by cd -[tab]
+
+# 色つきls
+  export LS_COLORS="no=00:fi=00:di=01;34:ln=01;36:pi=40;33:so=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arj=01;31:*.taz=01;31:*.lzh=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.gz=01;31:*.bz2=01;31:*.deb=01;31:*.rpm=01;31:*.jpg=01;35:*.png=01;35:*.gif=01;35:*.bmp=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.png=01;35:*.mpg=01;35:*.avi=01;35:*.fli=01;35:*.gl=01;35:*.dl=01;35:"
+  if alias ls 2>&1 >/dev/null; then
+    case "${OSTYPE}" in
+    freebsd*|darwin*)
+      alias ls="$(which ls) -G -w"
+      ;;
+    linux*)
+      alias ls="$(which ls) --color"
+      ;;
+    esac
+  fi
+
+# コマンド最後の/を削除しない
+  #setopt noautoremoveslash
+
+# Ctrl+S/Ctrl+Q によるフロー制御を使わないようにする
+  setopt NO_flow_control
+
+# コマンドラインでも # 以降をコメントと見なす
+  setopt interactive_comments
+
+# グロブの数のマッチを辞書式順じゃなくって数値の順
+  setopt numeric_glob_sort
+
+# 改行コードで終らない出力もちゃんと出力する
+  setopt no_promptcr
+
+# {}をbash ライクに展開
+  setopt rc_expand_param
+
+# Ctrl-D でログアウトするのを抑制する。
+  setopt ignore_eof
+
+# 拡張展開
+  setopt extended_glob
+
+# 8ビット文字をそのまま表示する
+  setopt PRINT_EIGHT_BIT
+
+
+
+# gpg-agent
+function gpg-agent-start() {
+  if [ -z "`pgrep -x gpg-agent 2> /dev/null`" ];then
+    if [ -n "`which gpg-agent 2> /dev/null`" ];then
+        export GPG_TTY=$(tty)
+        LANG=C gpg-connect-agent updatestartuptty /bye
+        export SSH_AUTH_SOCK="$(gpgconf --list-dirs agent-ssh-socket)"
+    else
+        echo "gpg-agent NOT exists"
+    fi
+  else
+    echo "gpg-agent already started"
+    export SSH_AUTH_SOCK="$(gpgconf --list-dirs agent-ssh-socket)"
+  fi
+}
+
+# TMUX用
+if [ -n $TMUX ]; then
+  function vim_tmux() {
+    if [ $? = 0 ]; then
+      alias vim="vim_tmux -o"
+    fi
+
+    FILE=
+    while getopts do: OPT
+    do
+      case $OPT in
+        d)  unalias vim
+            ;;
+        o)  FILE=$OPTARG
+            ;;
+      esac
+    done
+
+    if [ -n "$FILE" ]; then
+        tmux new-window -n "vim $(basename "${FILE}")" "LANG=${LANG} vim \"${FILE}\""
+    fi
+  }
+fi
+
+# エイリアス類
+function vess {
+  if [ $#* -eq 0 ]; then
+    vim -RMmn -c "noremap q :q<cr>" -
+  elif expr ${1##*:} : '[0-9]*' > /dev/null; then
+    vim -RMmn -c "noremap q :q<cr>" ${1%:*} +${1##*:}
+  else
+    vim -RMmn -c "noremap q :q<cr>" $*
+  fi
+}
+alias vimdiff='vimdiff -RMmn -c "noremap q :qa<cr>"'
+
+
+
+
+# 最後に
+# ホストごとの設定ファイルがあれば、それを読む
+if [ -z $DEVBOX_SHELL_ENABLED ]; then
+  [ -f ~/.zshrc.local ] && source ~/.zshrc.local
+fi
