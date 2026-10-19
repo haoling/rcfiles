@@ -1,0 +1,26 @@
+# 全マシン共通の git 設定
+# ~/.gitconfig の先頭で [include] して読み込む。マシン固有の設定は ~/.gitconfig に書くこと
+
+[color]
+	ui = auto
+
+[alias]
+	st = status
+	history = log --pretty=format:\"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset\" --abbrev-commit --date=relative
+
+[push]
+	default = simple
+[merge]
+	ff = false
+[user]
+	name = Haoling
+	email = noreply-haoling@fei-yen.jp
+	signingkey = C88E1EF9F9927FB5F30D831169B8B1EFBA2A76F3
+[core]
+	excludesfile = ~/.gitignore_global
+[gpg]
+	program = gpg
+[commit]
+	gpgsign = true
+[tag]
+	gpgsign = true
