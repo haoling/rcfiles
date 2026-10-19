@@ -3,15 +3,15 @@
 PROMPT1_1=$'\n%{\e[32m%}%n@%m %{\e[33m%}%~%{\e[0m%}'
 PROMPT1_2=$'%(!.#.$) '
 
-# VCS‚Ìî•ñ‚ğæ“¾‚·‚ézsh‚Ì•Ö—˜ŠÖ” vcs_info‚ğg‚¤
+# VCSã®æƒ…å ±ã‚’å–å¾—ã™ã‚‹zshã®ä¾¿åˆ©é–¢æ•° vcs_infoã‚’ä½¿ã†
 autoload -Uz vcs_info
 
 vcs_info 2>/dev/null
 if [ $? -eq 0 ]; then
 
-  # •\¦ƒtƒH[ƒ}ƒbƒg‚Ìw’è
-  # %b ƒuƒ‰ƒ“ƒ`î•ñ
-  # %a ƒAƒNƒVƒ‡ƒ“–¼(merge‚È‚Ç)
+  # è¡¨ç¤ºãƒ•ã‚©ãƒ¼ãƒãƒƒãƒˆã®æŒ‡å®š
+  # %b ãƒ–ãƒ©ãƒ³ãƒæƒ…å ±
+  # %a ã‚¢ã‚¯ã‚·ãƒ§ãƒ³å(mergeãªã©)
   zstyle ':vcs_info:*' formats '[%b]'
   zstyle ':vcs_info:*' actionformats '[%b|%a]'
   precmd () {
