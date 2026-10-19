@@ -27,3 +27,11 @@ prepend_loader .zshrc '.rcfiles/.zshrc_rcfiles' \
 	'[ -f ~/.rcfiles/.zshrc_rcfiles ] && source ~/.rcfiles/.zshrc_rcfiles'
 prepend_loader .gitconfig '.rcfiles/.gitconfig_rcfiles' \
 	"$(printf '[include]\n\tpath = ~/.rcfiles/.gitconfig_rcfiles')"
+
+# gpg-agent から呼ばれる pinentry の中継スクリプト（~/.gnupg がある環境のみ）
+if [ -d .gnupg ]; then
+	f=.gnupg/pinentry-notify.py
+	if [ -e $f ]; then rm $f; fi
+	if [ -L $f ]; then rm $f; fi
+	ln -s ../.rcfiles/gnupg/pinentry-notify.py $f
+fi

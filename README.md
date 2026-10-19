@@ -48,6 +48,70 @@ sh ~/.rcfiles/ln_rcfiles.sh
 
 Homebrew で入れたコマンドの補完は Homebrew が用意するので、ここでは扱いません。
 
+## GPG 鍵の使用確認ダイアログ（macOS）
+
+`gnupg/pinentry-notify.py` は、gpg-agent と [pinentry-touchid](https://github.com/jorgelbg/pinentry-touchid) の間に入る中継スクリプトです。
+GPG 鍵（gpg-agent 経由の SSH 鍵を含む）が使われるとき、Touch ID の前に確認ダイアログを出し、どのプロセスが鍵を要求したかを表示します。
+
+```
+要求元: gpg (PID 12345) ← git ← zsh ← login ← iTerm2
+
+Touch ID 認証に進みますか？        [キャンセル] [OK]
+```
+
+- **Enter（OK）** で Touch ID 認証に進み、**Escape（キャンセル）** で中止します
+- 60 秒操作がないとき、ダイアログを出せなかったときも中止します
+- gpg-agent と pinentry の通信はそのまま中継します。パスフレーズはどこにも記録しません
+
+### 必要なもの
+
+- macOS（`/usr/bin/python3` と `/usr/bin/osascript` を使います）
+- Homebrew で入れた pinentry-touchid（`/opt/homebrew/opt/pinentry-touchid/bin/pinentry-touchid`。場所が違うときはスクリプト冒頭の `REAL_PINENTRY` を書き換えてください）
+
+### インストール
+
+1. pinentry-touchid を入れて、単体で Touch ID 認証できるようにしておきます
+
+   ```sh
+   brew install pinentry-touchid
+   ```
+
+2. `ln_rcfiles.sh` を実行すると、`~/.gnupg/pinentry-notify.py` にシンボリックリンクができます（`~/.gnupg` があるときだけ）
+
+   ```sh
+   sh ~/.rcfiles/ln_rcfiles.sh
+   ```
+
+3. `~/.gnupg/gpg-agent.conf` の `pinentry-program` をこのスクリプトに向けます。パスは絶対パスで書いてください
+
+   ```
+   pinentry-program /Users/<ユーザー名>/.gnupg/pinentry-notify.py
+   ```
+
+4. gpg-agent を再起動して、署名を試します
+
+   ```sh
+   gpgconf --kill gpg-agent
+   echo test | gpg --clearsign > /dev/null
+   ```
+
+   確認ダイアログが出て、OK のあとに Touch ID 認証ができれば完了です。
+
+### うまく動かないとき
+
+Touch ID を使わずに、要求元の取得と中継だけを確かめられます。
+
+```sh
+printf 'OPTION owner=%d/%d %s\nGETINFO version\nBYE\n' $$ $(id -u) $(hostname) \
+  | PINENTRY_NOTIFY_DEBUG=1 ~/.gnupg/pinentry-notify.py
+```
+
+`[pinentry-notify] zsh (PID ...) ← ...` と `OK` で始まる行が出れば正常です。
+
+### 元に戻す
+
+`gpg-agent.conf` の `pinentry-program` を pinentry-touchid に戻して、`gpgconf --kill gpg-agent` を実行します。
+
 ## ファイル一覧
 
 | ファイル | 内容 |
@@ -66,4 +130,5 @@ Homebrew で入れたコマンドの補完は Homebrew が用意するので、�
 | `.myfunc` | 上のスクリプトが使う bash の関数 |
 | `shell_functions/aws_profile_switcher.zsh` | `AWS_PROFILE` を選んで切り替える関数（`awsp` など）。`~/.zshrc` から `source` して使う |
 | `shell_functions/middle`, `middle.php` | ファイルの指定行の前後を表示する `middle` コマンド |
+| `gnupg/pinentry-notify.py` | GPG 鍵の使用前に要求元を表示して確認する pinentry の中継スクリプト（macOS） |
 | `ln_rcfiles.sh` | セットアップ用のスクリプト |
