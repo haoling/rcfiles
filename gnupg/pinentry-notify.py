@@ -8,10 +8,12 @@ OK（Enter）なら続行、キャンセル（Escape）・タイムアウト・�
 ~/.gnupg/pinentry-notify-webhook に URL を書いておくと、結果と要求元を webhook に送る。
 pinentry からの応答（パスフレーズを含む D 行）は一切記録しない。
 """
+import ctypes
 import json
 import os
 import re
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -19,6 +21,7 @@ import urllib.request
 
 REAL_PINENTRY = "/opt/homebrew/opt/pinentry-touchid/bin/pinentry-touchid"
 MAX_DEPTH = 6
+MAX_ARG_LEN = 200  # webhook に送る引数 1 つあたりの最大文字数
 DIALOG_TIMEOUT = 60  # この秒数操作がなければキャンセル扱い
 # gpg-agent から起動されると環境変数が引き継がれないため、URL はファイルから読む
 WEBHOOK_URL_FILE = os.path.expanduser("~/.gnupg/pinentry-notify-webhook")
@@ -27,6 +30,10 @@ OWNER_RE = re.compile(rb"^OPTION\s+owner=(\d+)")
 GETPIN_RE = re.compile(rb"^GETPIN\b", re.IGNORECASE)
 # GPG_ERR_SOURCE_PINENTRY(5) << 24 | GPG_ERR_CANCELED(99)
 ERR_CANCELED = b"ERR 83886179 Operation cancelled <Pinentry>\n"
+
+CTL_KERN = 1
+KERN_ARGMAX = 8
+KERN_PROCARGS2 = 49
 
 stdout_lock = threading.Lock()
 
@@ -42,10 +49,46 @@ def write_to_agent(data):
         sys.stdout.buffer.flush()
 
 
+def sysctl(mib, size):
+    libc = ctypes.CDLL(None, use_errno=True)
+    mib_arr = (ctypes.c_int * len(mib))(*mib)
+    buf = ctypes.create_string_buffer(size)
+    length = ctypes.c_size_t(size)
+    if libc.sysctl(mib_arr, len(mib), buf, ctypes.byref(length), None, 0) != 0:
+        return None
+    return buf.raw[:length.value]
+
+
+def process_argv(pid):
+    """pid の引数を配列で返す（他ユーザーのプロセスなどで取得できなければ None）。
+
+    ps の args 列は引数を空白でつないでしまうため、sysctl(KERN_PROCARGS2) で区切りごと取り出す。
+    KERN_PROCARGS2 は argc、実行ファイルのパス、NUL の詰め物、argv、環境変数の順に並ぶが、
+    環境変数には秘密情報が入りうるので argv より後ろは読まない。
+    """
+    try:
+        argmax = sysctl([CTL_KERN, KERN_ARGMAX], ctypes.sizeof(ctypes.c_int))
+        data = sysctl([CTL_KERN, KERN_PROCARGS2, pid], struct.unpack("i", argmax)[0])
+    except Exception:
+        return None
+    if not data or len(data) < 4:
+        return None
+    argc = struct.unpack_from("i", data)[0]
+    pos = data.find(b"\0", 4)
+    if pos < 0:
+        return None
+    while pos < len(data) and data[pos] == 0:
+        pos += 1
+    args = data[pos:].split(b"\0", argc)[:argc]
+    # 他ユーザーのプロセスでは argc が 0 で返ることがあるので、取得できなかった扱いにする
+    if not args:
+        return None
+    return [a.decode("utf-8", "replace")[:MAX_ARG_LEN] for a in args]
+
+
 def process_chain(pid):
-    """pid から親方向にたどって 'gpg (PID 123) ← git ← zsh' 形式の文字列を返す。"""
-    names = []
-    first_pid = pid
+    """pid から親方向にたどって [{"pid", "name", "path", "argv"}, ...]（要求元が先頭）を返す。"""
+    chain = []
     for _ in range(MAX_DEPTH):
         if pid <= 1:
             break
@@ -59,15 +102,28 @@ def process_chain(pid):
         if not out:
             break
         ppid, _, comm = out.partition(" ")
-        names.append(os.path.basename(comm.strip()))
+        comm = comm.strip()
+        chain.append({
+            "pid": pid,
+            "name": os.path.basename(comm),
+            "path": comm,
+            "argv": process_argv(pid),
+        })
         try:
             pid = int(ppid)
         except ValueError:
             break
-    if not names:
-        return "PID %d（プロセス情報を取得できません）" % first_pid
-    names[0] = "%s (PID %d)" % (names[0], first_pid)
-    return " ← ".join(names)
+    return chain
+
+
+def find_requester(pid):
+    """要求元を {"summary": 'gpg (PID 123) ← git ← zsh', "chain": [...]} の形で返す。"""
+    chain = process_chain(pid)
+    if not chain:
+        return {"summary": "PID %d（プロセス情報を取得できません）" % pid, "chain": []}
+    names = [p["name"] for p in chain]
+    names[0] = "%s (PID %d)" % (names[0], pid)
+    return {"summary": " ← ".join(names), "chain": chain}
 
 
 def send_webhook(status, requester):
@@ -80,8 +136,9 @@ def send_webhook(status, requester):
     if not url:
         return
     host = socket.gethostname()
+    # text とダイアログは summary だけにし、引数やフルパスは requester.chain でのみ渡す
     payload = {
-        "text": "🔐 GPG鍵の使用要求: %s\n要求元: %s\nホスト: %s" % (status, requester, host),
+        "text": "🔐 GPG鍵の使用要求: %s\n要求元: %s\nホスト: %s" % (status, requester["summary"], host),
         "status": status,
         "requester": requester,
         "host": host,
@@ -104,7 +161,7 @@ def send_webhook(status, requester):
 
 def confirm(requester):
     """確認ダイアログを出し、"ok" / "cancel" / "timeout" / "error" のいずれかを返す。"""
-    debug(requester)
+    debug(requester["summary"])
     try:
         # 文字列は argv 経由で渡し、AppleScript への埋め込みを避ける
         result = subprocess.run(
@@ -115,7 +172,7 @@ def confirm(requester):
                    " cancel button \"キャンセル\" with icon caution"
                    " giving up after (item 3 of argv as integer)",
              "-e", "end run",
-             "要求元: " + requester + "\n\nTouch ID 認証に進みますか？",
+             "要求元: " + requester["summary"] + "\n\nTouch ID 認証に進みますか？",
              "🔐 GPG鍵の使用要求", str(DIALOG_TIMEOUT)],
             stdin=subprocess.DEVNULL, capture_output=True, text=True,
             timeout=DIALOG_TIMEOUT + 10,
@@ -133,12 +190,12 @@ def confirm(requester):
 
 
 def pump_agent_to_pinentry(src, dst):
-    requester = "不明（gpg-agent から要求元が渡されませんでした）"
+    requester = {"summary": "不明（gpg-agent から要求元が渡されませんでした）", "chain": []}
     try:
         for line in iter(src.readline, b""):
             m = OWNER_RE.match(line)
             if m:
-                requester = process_chain(int(m.group(1)))
+                requester = find_requester(int(m.group(1)))
             if GETPIN_RE.match(line):
                 status = confirm(requester)
                 debug(status)

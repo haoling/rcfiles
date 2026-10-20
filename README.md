@@ -108,11 +108,26 @@ chmod 600 ~/.gnupg/pinentry-notify-webhook
 ```
 
 ```json
-{"text": "🔐 GPG鍵の使用要求: ok\n要求元: ...\nホスト: ...", "status": "ok", "requester": "gpg (PID 12345) ← git ← zsh", "host": "my-mac.local"}
+{
+  "text": "🔐 GPG鍵の使用要求: ok\n要求元: gpg (PID 12345) ← git ← zsh\nホスト: my-mac.local",
+  "status": "ok",
+  "requester": {
+    "summary": "gpg (PID 12345) ← git ← zsh",
+    "chain": [
+      {"pid": 12345, "name": "gpg", "path": "/opt/homebrew/bin/gpg", "argv": ["gpg", "--status-fd=2", "-bsau", "..."]},
+      {"pid": 12340, "name": "git", "path": "/opt/homebrew/bin/git", "argv": ["git", "commit", "-m", "..."]},
+      {"pid": 12000, "name": "zsh", "path": "-zsh", "argv": ["-zsh"]}
+    ]
+  },
+  "host": "my-mac.local"
+}
 ```
 
 - `status` は `ok`（OK）、`cancel`（キャンセル）、`timeout`（60 秒操作なし）、`error`（ダイアログを出せなかった）のいずれかです
 - `text` があるので、Slack の Incoming Webhook にそのまま送れます
+- `text` と確認ダイアログには `requester.summary`（プロセス名と PID だけ）を出します。実行ファイルのパスと引数は `requester.chain` にだけ入れます
+- `requester.chain` は要求元から親方向に最大 6 個までのプロセスで、`path` は実行ファイルのパス、`argv` は引数の配列です。引数 1 つは 200 文字までで切り詰め、root など他ユーザーのプロセスで取得できないときは `null` になります。環境変数は送りません
+- `git commit -m` のメッセージなど、コマンドラインの引数はそのまま送られます。コマンドラインにトークンなどを書く使い方をしている場合は、送り先に注意してください
 - 送信は別スレッドで行い、失敗しても無視します（Touch ID 認証は待たせません）
 
 ### うまく動かないとき
