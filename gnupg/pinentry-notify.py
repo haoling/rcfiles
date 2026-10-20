@@ -5,17 +5,24 @@ gpg-agent <-> pinentry 間の Assuan 通信はそのまま素通しし、
 gpg-agent から送られる "OPTION owner=<pid>/<uid> <host>" から要求元を調べる。
 GETPIN（Touch ID 認証の開始）の直前に確認ダイアログを出し、
 OK（Enter）なら続行、キャンセル（Escape）・タイムアウト・表示失敗なら中止する。
+~/.gnupg/pinentry-notify-webhook に URL を書いておくと、結果と要求元を webhook に送る。
 pinentry からの応答（パスフレーズを含む D 行）は一切記録しない。
 """
+import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import threading
+import urllib.request
 
 REAL_PINENTRY = "/opt/homebrew/opt/pinentry-touchid/bin/pinentry-touchid"
 MAX_DEPTH = 6
 DIALOG_TIMEOUT = 60  # この秒数操作がなければキャンセル扱い
+# gpg-agent から起動されると環境変数が引き継がれないため、URL はファイルから読む
+WEBHOOK_URL_FILE = os.path.expanduser("~/.gnupg/pinentry-notify-webhook")
+WEBHOOK_TIMEOUT = 5
 OWNER_RE = re.compile(rb"^OPTION\s+owner=(\d+)")
 GETPIN_RE = re.compile(rb"^GETPIN\b", re.IGNORECASE)
 # GPG_ERR_SOURCE_PINENTRY(5) << 24 | GPG_ERR_CANCELED(99)
@@ -63,8 +70,40 @@ def process_chain(pid):
     return " ← ".join(names)
 
 
+def send_webhook(status, requester):
+    """結果を webhook に送る。URL 未設定や送信失敗は無視する。"""
+    try:
+        with open(WEBHOOK_URL_FILE) as f:
+            url = f.read().strip()
+    except OSError:
+        return
+    if not url:
+        return
+    host = socket.gethostname()
+    payload = {
+        "text": "🔐 GPG鍵の使用要求: %s\n要求元: %s\nホスト: %s" % (status, requester, host),
+        "status": status,
+        "requester": requester,
+        "host": host,
+    }
+
+    def post():
+        try:
+            req = urllib.request.Request(
+                url, data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=WEBHOOK_TIMEOUT).close()
+        except Exception as e:
+            debug("webhook failed: %r" % e)
+
+    # Touch ID 認証を待たせないよう別スレッドで送る。
+    # daemon にしないので、プロセス終了前に送信（最大 WEBHOOK_TIMEOUT 秒）を待つ。
+    threading.Thread(target=post).start()
+
+
 def confirm(requester):
-    """確認ダイアログを出し、OK が押されたときだけ True を返す。"""
+    """確認ダイアログを出し、"ok" / "cancel" / "timeout" / "error" のいずれかを返す。"""
     debug(requester)
     try:
         # 文字列は argv 経由で渡し、AppleScript への埋め込みを避ける
@@ -82,10 +121,15 @@ def confirm(requester):
             timeout=DIALOG_TIMEOUT + 10,
         )
     except Exception:
-        return False
-    return (result.returncode == 0
-            and "button returned:OK" in result.stdout
-            and "gave up:true" not in result.stdout)
+        return "error"
+    if result.returncode != 0:
+        # キャンセルボタン・Escape は osascript がエラー -128 で終了する
+        return "cancel" if "-128" in result.stderr else "error"
+    if "gave up:true" in result.stdout:
+        return "timeout"
+    if "button returned:OK" in result.stdout:
+        return "ok"
+    return "error"
 
 
 def pump_agent_to_pinentry(src, dst):
@@ -95,10 +139,13 @@ def pump_agent_to_pinentry(src, dst):
             m = OWNER_RE.match(line)
             if m:
                 requester = process_chain(int(m.group(1)))
-            if GETPIN_RE.match(line) and not confirm(requester):
-                debug("cancelled")
-                write_to_agent(ERR_CANCELED)
-                continue
+            if GETPIN_RE.match(line):
+                status = confirm(requester)
+                debug(status)
+                send_webhook(status, requester)
+                if status != "ok":
+                    write_to_agent(ERR_CANCELED)
+                    continue
             dst.write(line)
             dst.flush()
     except (BrokenPipeError, OSError):

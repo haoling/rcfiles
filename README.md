@@ -97,6 +97,24 @@ Touch ID 認証に進みますか？        [キャンセル] [OK]
 
    確認ダイアログが出て、OK のあとに Touch ID 認証ができれば完了です。
 
+### webhook で結果を送る（任意）
+
+`~/.gnupg/pinentry-notify-webhook` に URL を 1 行書いておくと、ダイアログの結果と要求元を JSON で POST します。
+URL は秘密情報として扱い、このリポジトリには入れないでください。
+
+```sh
+echo 'https://hooks.slack.com/services/...' > ~/.gnupg/pinentry-notify-webhook
+chmod 600 ~/.gnupg/pinentry-notify-webhook
+```
+
+```json
+{"text": "🔐 GPG鍵の使用要求: ok\n要求元: ...\nホスト: ...", "status": "ok", "requester": "gpg (PID 12345) ← git ← zsh", "host": "my-mac.local"}
+```
+
+- `status` は `ok`（OK）、`cancel`（キャンセル）、`timeout`（60 秒操作なし）、`error`（ダイアログを出せなかった）のいずれかです
+- `text` があるので、Slack の Incoming Webhook にそのまま送れます
+- 送信は別スレッドで行い、失敗しても無視します（Touch ID 認証は待たせません）
+
 ### うまく動かないとき
 
 Touch ID を使わずに、要求元の取得と中継だけを確かめられます。
