@@ -1,6 +1,9 @@
 #!/bin/zsh
 
-# バージョン1: selectコマンドを使用（数字キーで選択）
+# fzf-install-guide を探すため、このファイルの置き場所を覚えておく
+_awsp_dir="${${(%):-%x}:A:h}"
+
+# バージョン1: fzf があれば fzf で、なければ selectコマンドで選択
 function awsp() {
     local config_file="${HOME}/.aws/config"
     
@@ -32,6 +35,31 @@ function awsp() {
     if [[ ${#profiles[@]} -eq 0 ]]; then
         echo "プロファイルが見つかりませんでした"
         return 1
+    fi
+    
+    if (( $+commands[fzf] )); then
+        # 選んでいるプロファイルの設定を ~/.aws/config から抜き出して表示する
+        local preview='awk -v name={} '"'"'
+            BEGIN { h = (name == "default") ? "[default]" : "[profile " name "]" }
+            $0 == h { f = 1; print; next }
+            /^\[/ { f = 0 }
+            f
+        '"'"' ~/.aws/config'
+        local profile
+        profile=$(printf '%s\n' $profiles | fzf --height 40% --reverse \
+            --prompt 'AWS profile> ' \
+            --header "現在: ${AWS_PROFILE:-なし}" \
+            --preview "$preview") || return 0
+        export AWS_PROFILE="$profile"
+        echo "✓ AWS_PROFILE を '$profile' に設定しました"
+        return 0
+    fi
+    
+    # fzf がなければ入れ方を案内してから、select で選ぶ（案内はシェルごとに 1 回）
+    if [[ -z "$_awsp_fzf_guided" ]]; then
+        "$_awsp_dir/fzf-install-guide"
+        echo
+        _awsp_fzf_guided=1
     fi
     
     echo "AWSプロファイルを選択してください:"
@@ -237,7 +265,8 @@ function awsp-new() {
 function awsp-help() {
     cat <<'HELP'
 使い方:
-  awsp              プロファイルを番号で選んで AWS_PROFILE に設定
+  awsp              プロファイルを選んで AWS_PROFILE に設定
+                    （fzf があれば fzf で、なければ番号で選ぶ）
   awsp new [名前]   プロファイルを新規作成して切り替え（-n, --new でも可）
   awsp help         この使い方を表示（-h, --help でも可）
   awsp-interactive  カーソルキーでプロファイルを選んで設定
@@ -263,5 +292,7 @@ function awsp-help() {
     region = ap-northeast-1
 
 作ったあとは awsp で選ぶと切り替わる。
+
+fzf の入れ方は ~/.rcfiles/shell_functions/fzf-install-guide で確認できる。
 HELP
 }
