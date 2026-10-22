@@ -1,0 +1,57 @@
+#!/bin/sh
+# fzf を現在のユーザーにインストールする手順を、環境に合わせて表示する
+# 表示するだけで、インストールはしない
+
+if command -v fzf >/dev/null 2>&1; then
+	echo "fzf はインストール済みです: $(command -v fzf) ($(fzf --version))"
+	exit 0
+fi
+
+echo "fzf が見つかりません。次の手順で ${USER:-現在のユーザー} にインストールできます（sudo 不要）:"
+echo
+
+bin_dir=
+if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+	echo "  brew install fzf"
+elif command -v git >/dev/null 2>&1; then
+	echo "  git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf"
+	echo "  ~/.fzf/install --bin"
+	bin_dir=$HOME/.fzf/bin
+elif command -v curl >/dev/null 2>&1; then
+	echo "  mkdir -p ~/.fzf"
+	echo "  curl -fsSL https://github.com/junegunn/fzf/archive/refs/heads/master.tar.gz | tar -xz --strip-components=1 -C ~/.fzf"
+	echo "  ~/.fzf/install --bin"
+	bin_dir=$HOME/.fzf/bin
+else
+	echo "  git か curl が必要です。どちらかを入れてから、もう一度実行してください"
+	echo "  （手で入れる場合は https://github.com/junegunn/fzf/releases からバイナリを取得）"
+fi
+
+# ~/.fzf/install --bin はシェルの設定を書き換えないので、PATH は自分で通す
+if [ -n "$bin_dir" ]; then
+	case ":$PATH:" in
+	*":$bin_dir:"*) ;;
+	*)
+		echo
+		echo "  そのあと ~/.zshrc.local に次の行を追加して、シェルを開き直す:"
+		echo "  export PATH=\"\$HOME/.fzf/bin:\$PATH\""
+		;;
+	esac
+fi
+
+# 参考: sudo が使えるならシステムのパッケージでも入る（版が古いことがある）
+pkg=
+if command -v apt-get >/dev/null 2>&1; then
+	pkg="sudo apt-get install fzf"
+elif command -v dnf >/dev/null 2>&1; then
+	pkg="sudo dnf install fzf"
+elif command -v pacman >/dev/null 2>&1; then
+	pkg="sudo pacman -S fzf"
+elif command -v apk >/dev/null 2>&1; then
+	pkg="sudo apk add fzf"
+fi
+if [ -n "$pkg" ]; then
+	echo
+	echo "sudo が使える場合は、システム全体に入れることもできます:"
+	echo "  $pkg"
+fi
