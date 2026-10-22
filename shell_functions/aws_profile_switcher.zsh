@@ -4,8 +4,20 @@
 function awsp() {
     local config_file="${HOME}/.aws/config"
     
+    case "$1" in
+        -h|--help|help)
+            awsp-help
+            return 0
+            ;;
+        -n|--new|new)
+            shift
+            awsp-new "$@"
+            return
+            ;;
+    esac
+    
     if [[ ! -f "$config_file" ]]; then
-        echo "Error: ~/.aws/config が見つかりません"
+        echo "Error: ~/.aws/config が見つかりません（'awsp new' で作成できます）"
         return 1
     fi
     
@@ -154,4 +166,102 @@ function awsp-current() {
     else
         echo "AWS_PROFILE は設定されていません（defaultプロファイルを使用）"
     fi
+}
+
+# プロファイルを新規作成して切り替える
+function awsp-new() {
+    local config_file="${HOME}/.aws/config"
+    local profile="$1"
+    
+    if ! command -v aws >/dev/null 2>&1; then
+        echo "Error: aws コマンドが見つかりません"
+        return 1
+    fi
+    
+    if [[ -z "$profile" ]]; then
+        read "profile?新しいプロファイル名: "
+    fi
+    
+    if [[ -z "$profile" ]]; then
+        echo "キャンセルしました"
+        return 1
+    fi
+    
+    # 一覧の取得が空白区切りなので、空白や [] を含む名前は受け付けない
+    if [[ "$profile" == *[[:space:]]* || "$profile" == *\[* || "$profile" == *\]* ]]; then
+        echo "Error: プロファイル名に空白や [ ] は使えません"
+        return 1
+    fi
+    
+    local section="[profile $profile]"
+    [[ "$profile" == "default" ]] && section="[default]"
+    
+    if [[ -f "$config_file" ]] && grep -qxF "$section" "$config_file"; then
+        echo "Error: プロファイル '$profile' は既に存在します"
+        return 1
+    fi
+    
+    # select は日本語の項目名が崩れることがあるので自前で表示する
+    echo "認証方式を選択してください:"
+    echo "  1) IAM Identity Center (SSO)"
+    echo "  2) アクセスキー"
+
+    local method
+    while true; do
+        read "method?番号: " || return 1
+        case "$method" in
+            1)
+                aws configure sso --profile "$profile" || return 1
+                break
+                ;;
+            2)
+                aws configure --profile "$profile" || return 1
+                break
+                ;;
+            *)
+                echo "無効な選択です"
+                ;;
+        esac
+    done
+    
+    if [[ -f "$config_file" ]] && grep -qxF "$section" "$config_file"; then
+        export AWS_PROFILE="$profile"
+        echo "✓ プロファイル '$profile' を作成し、AWS_PROFILE に設定しました"
+    else
+        echo "プロファイル '$profile' は作成されませんでした"
+        return 1
+    fi
+}
+
+# 使い方を表示
+function awsp-help() {
+    cat <<'HELP'
+使い方:
+  awsp              プロファイルを番号で選んで AWS_PROFILE に設定
+  awsp new [名前]   プロファイルを新規作成して切り替え（-n, --new でも可）
+  awsp help         この使い方を表示（-h, --help でも可）
+  awsp-interactive  カーソルキーでプロファイルを選んで設定
+  awsp-current      現在のプロファイルを表示
+  awsp-unset        AWS_PROFILE を解除
+
+プロファイルを手作業で作る場合:
+  IAM Identity Center (SSO) を使う:
+    aws configure sso --profile <名前>
+    （SSO start URL と SSO region を聞かれ、ブラウザで認証したあと
+      アカウントとロールを選ぶ。セッションが切れたら
+      aws sso login --profile <名前> で再ログインする）
+
+  アクセスキーを使う:
+    aws configure --profile <名前>
+    （Access Key ID / Secret Access Key / region / output を入力する。
+      キーは ~/.aws/credentials に、それ以外は ~/.aws/config に保存される）
+
+  ~/.aws/config を直接編集する場合（例: 既存プロファイルからロールを引き受ける）:
+    [profile <名前>]
+    role_arn = arn:aws:iam::123456789012:role/<ロール名>
+    source_profile = <元のプロファイル名>
+    region = ap-northeast-1
+
+作ったあとは awsp で選ぶと切り替わる。
+HELP
 }

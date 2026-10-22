@@ -161,7 +161,7 @@ printf 'OPTION owner=%d/%d %s\nGETINFO version\nBYE\n' $$ $(id -u) $(hostname) \
 | `.tmuxssh` | ssh 接続ごとに tmux セッションを作るスクリプト |
 | `.mylauncher` | `~/.mylaunchers` に置いたコマンドを選んで実行するランチャー |
 | `.myfunc` | 上のスクリプトが使う bash の関数 |
-| `shell_functions/aws_profile_switcher.zsh` | `AWS_PROFILE` を選んで切り替える関数（`awsp` など）。`~/.zshrc` から `source` して使う |
+| `shell_functions/aws_profile_switcher.zsh` | `AWS_PROFILE` を選んで切り替える関数（`awsp` など）。`awsp new` でプロファイルの新規作成、`awsp help` で使い方を表示。`~/.zshrc` から `source` して使う |
 | `shell_functions/middle`, `middle.php` | ファイルの指定行の前後を表示する `middle` コマンド |
 | `gnupg/pinentry-notify.py` | GPG 鍵の使用前に要求元を表示して確認する pinentry の中継スクリプト（macOS） |
 | `ln_rcfiles.sh` | セットアップ用のスクリプト |
