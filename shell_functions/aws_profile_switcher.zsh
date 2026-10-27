@@ -160,6 +160,115 @@ function awsp-new() {
     fi
 }
 
+# 今のプロファイルの一時キーを、Coder ワークスペース用の k8s Secret に入れる
+# Secret 名は aws-session-token-<プロファイル名>（k8s の名前は小文字・ハイフンしか使えないので変換する）
+# Secret には config / credentials / expiration の 3 つのファイルが入る。
+# テンプレートの AWS profile に同じ名前を入れたワークスペースが読み込み、
+# 実行し直すと、動いているワークスペースにも 1 分ほどで反映される
+# aws login の一時キーは 15 分で切れるので、使う間は --watch で書き直し続ける
+# （ホスト側の aws login のセッションが続く最大 12 時間まで）
+function awsp-coder() {
+    setopt local_options pipe_fail
+    local context="rancher-desktop"
+    local namespace="coder"
+    # --watch のときに Secret を書き直す間隔（秒）。aws login の一時キーは 15 分で切れるので、それより十分短くする
+    local interval="${AWSP_CODER_INTERVAL:-300}"
+    local watch=0
+
+    case "$1" in
+        -w|--watch) watch=1 ;;
+        "") ;;
+        *)
+            echo "使い方: awsp-coder [-w|--watch]"
+            return 1
+            ;;
+    esac
+
+    if [[ -z "$AWS_PROFILE" ]]; then
+        echo "Error: AWS_PROFILE が設定されていません（awsp で選べます）"
+        return 1
+    fi
+
+    local cmd
+    for cmd in aws kubectl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+            echo "Error: $cmd コマンドが見つかりません"
+            return 1
+        fi
+    done
+
+    local secret="aws-session-token-${(L)${AWS_PROFILE//_/-}}"
+    if [[ ! "$secret" =~ '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$' ]]; then
+        echo "Error: プロファイル名 '$AWS_PROFILE' から Secret 名を作れません（$secret）"
+        return 1
+    fi
+
+    if ! kubectl config get-contexts "$context" >/dev/null 2>&1; then
+        echo "Error: kubectl のコンテキスト '$context' がありません"
+        return 1
+    fi
+
+    local region section="[profile $AWS_PROFILE]"
+    region=$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null)
+    [[ "$AWS_PROFILE" == "default" ]] && section="[default]"
+
+    if (( watch )); then
+        echo "${interval} 秒ごとに $namespace/$secret を書き直します（Ctrl-C で終了）"
+    fi
+
+    # zsh では値の入った変数をもう一度 local 宣言すると中身が表示されるので、ループの外で宣言する
+    local out line key_id secret_key session_token expiration tmp
+    while :; do
+        # aws login の一時キーと更新用トークンはホストの ~/.aws/login/cache に置いたまま、
+        # CLI が更新した一時キーだけを取り出して渡す。ロールのプロファイルは CLI がロールを引き受ける
+        key_id="" secret_key="" session_token="" expiration=""
+        if ! out=$(aws configure export-credentials --profile "$AWS_PROFILE" --format env-no-export); then
+            echo "Error: 一時キーを取得できませんでした（aws login でログインし直してください。ロールのプロファイルは source_profile 側でログインします）"
+            return 1
+        fi
+        for line in ${(f)out}; do
+            case "${line%%=*}" in
+                AWS_ACCESS_KEY_ID) key_id="${line#*=}" ;;
+                AWS_SECRET_ACCESS_KEY) secret_key="${line#*=}" ;;
+                AWS_SESSION_TOKEN) session_token="${line#*=}" ;;
+                AWS_CREDENTIAL_EXPIRATION) expiration="${line#*=}" ;;
+            esac
+        done
+
+        if [[ -z "$key_id" || -z "$secret_key" || -z "$session_token" ]]; then
+            echo "Error: 一時キーではないキーが返ってきたので中止します"
+            return 1
+        fi
+
+        # ワークスペースではこのディレクトリの中身がファイルとしてマウントされ、
+        # AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE で読まれる
+        # キーは画面にもコマンドライン引数にも出さず、自分だけが読める一時ディレクトリ経由で渡す
+        tmp=$(umask 077; mktemp -d "${TMPDIR:-/tmp}/awsp-coder.XXXXXX") || return 1
+        {
+            printf '%s\n' \
+                "[$AWS_PROFILE]" \
+                "aws_access_key_id = $key_id" \
+                "aws_secret_access_key = $secret_key" \
+                "aws_session_token = $session_token" >"$tmp/credentials"
+            printf '%s\n' "$section" >"$tmp/config"
+            [[ -n "$region" ]] && printf 'region = %s\n' "$region" >>"$tmp/config"
+            printf '%s\n' "$expiration" >"$tmp/expiration"
+
+            kubectl --context "$context" -n "$namespace" create secret generic "$secret" \
+                --from-file="$tmp" --dry-run=client -o yaml \
+                | kubectl --context "$context" -n "$namespace" apply -f - >/dev/null \
+                || { echo "Error: Secret を書き込めませんでした"; return 1; }
+
+            echo "✓ $(date +%H:%M:%S) '$AWS_PROFILE' の一時キーを $namespace/$secret に格納しました（期限: ${expiration:-不明}）"
+        } always {
+            rm -rf "$tmp"
+        }
+
+        (( watch )) || return 0
+        sleep "$interval"
+    done
+}
+
 # 使い方を表示
 function awsp-help() {
     cat <<'HELP'
@@ -170,6 +279,11 @@ function awsp-help() {
   awsp help         この使い方を表示（-h, --help でも可）
   awsp-current      現在のプロファイルを表示
   awsp-unset        AWS_PROFILE を解除
+  awsp-coder        今のプロファイルの一時キーを rancher-desktop の
+                    coder/aws-session-token-<プロファイル名> Secret に格納
+                    （Coder テンプレートの AWS profile に同じ名前を入れると読み込まれる）
+  awsp-coder -w     上を AWSP_CODER_INTERVAL 秒（既定 300 秒）ごとに繰り返す（--watch でも可）
+                    aws login の一時キーは 15 分で切れるので、ワークスペースで使う間は動かしておく
 
 プロファイルを手作業で作る場合:
   IAM Identity Center (SSO) を使う:
