@@ -45,10 +45,17 @@ function awsp() {
             /^\[/ { f = 0 }
             f
         '"'"' ~/.aws/config'
+        # 今のプロファイルが一覧にあれば、最初からそこにカーソルを当てる
+        local -a pos_opt
+        local current_index=${profiles[(Ie)$AWS_PROFILE]}
+        if [[ -n "$AWS_PROFILE" ]] && (( current_index > 0 )); then
+            pos_opt=(--bind "load:pos($current_index)")
+        fi
         local profile
         profile=$(printf '%s\n' $profiles | fzf --height 40% --reverse \
             --prompt 'AWS profile> ' \
             --header "現在: ${AWS_PROFILE:-なし}" \
+            $pos_opt \
             --preview "$preview") || return 0
         export AWS_PROFILE="$profile"
         echo "✓ AWS_PROFILE を '$profile' に設定しました"
