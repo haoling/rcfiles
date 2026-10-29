@@ -170,6 +170,8 @@ function awsp-new() {
 # 今のプロファイルの一時キーを、Coder ワークスペース用の k8s Secret に入れる
 # Secret 名は aws-session-token-<プロファイル名>（k8s の名前は小文字・ハイフンしか使えないので変換する）
 # Secret には config / credentials / expiration の 3 つのファイルが入る。
+# ワークスペースでは一時キーを AWS_PROFILE と同じ名前のプロファイルとして渡し、そこから
+# tofu-plan（AWS_PROFILE と同じアカウントのロール）→ tfstate-access（tfstate 用アカウントのロール）を引き受けられる config にする
 # テンプレートの AWS profile に同じ名前を入れたワークスペースが読み込み、
 # 実行し直すと、動いているワークスペースにも 1 分ほどで反映される
 # aws login の一時キーは 15 分で切れるので、使う間は --watch で書き直し続ける
@@ -215,16 +217,34 @@ function awsp-coder() {
         return 1
     fi
 
-    local region section="[profile $AWS_PROFILE]"
-    region=$(aws configure get region --profile "$AWS_PROFILE" 2>/dev/null)
+    # ワークスペースの config では tofu-plan / tfstate-access を別に作るので、同じ名前は使えない
+    if [[ "$AWS_PROFILE" == (tofu-plan|tfstate-access) ]]; then
+        echo "Error: '$AWS_PROFILE' はワークスペース側で作るプロファイル名と重なるので使えません"
+        return 1
+    fi
+
+    local section="[profile $AWS_PROFILE]"
     [[ "$AWS_PROFILE" == "default" ]] && section="[default]"
+
+    # tfstate を置いているアカウントは固定
+    local tfstate_account="364733123942"
+    # tofu-plan ロールは AWS_PROFILE のアカウントにあるので、そのアカウント ID を調べておく
+    local account_id
+    if ! account_id=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text); then
+        echo "Error: '$AWS_PROFILE' のアカウント ID を取得できませんでした（aws login でログインし直してください）"
+        return 1
+    fi
+    if [[ ! "$account_id" =~ '^[0-9]{12}$' ]]; then
+        echo "Error: アカウント ID の形がおかしいので中止します（$account_id）"
+        return 1
+    fi
 
     if (( watch )); then
         echo "${interval} 秒ごとに $namespace/$secret を書き直します（Ctrl-C で終了）"
     fi
 
     # zsh では値の入った変数をもう一度 local 宣言すると中身が表示されるので、ループの外で宣言する
-    local out line key_id secret_key session_token expiration tmp
+    local out line key_id secret_key session_token expiration exp_jst exp_tz tmp
     while :; do
         # aws login の一時キーと更新用トークンはホストの ~/.aws/login/cache に置いたまま、
         # CLI が更新した一時キーだけを取り出して渡す。ロールのプロファイルは CLI がロールを引き受ける
@@ -257,8 +277,17 @@ function awsp-coder() {
                 "aws_access_key_id = $key_id" \
                 "aws_secret_access_key = $secret_key" \
                 "aws_session_token = $session_token" >"$tmp/credentials"
-            printf '%s\n' "$section" >"$tmp/config"
-            [[ -n "$region" ]] && printf 'region = %s\n' "$region" >>"$tmp/config"
+            printf '%s\n' \
+                "$section" \
+                "region = ap-northeast-1" \
+                "" \
+                "[profile tofu-plan]" \
+                "role_arn       = arn:aws:iam::${account_id}:role/tofu-plan" \
+                "source_profile = $AWS_PROFILE" \
+                "" \
+                "[profile tfstate-access]" \
+                "role_arn       = arn:aws:iam::${tfstate_account}:role/tfstate-access" \
+                "source_profile = tofu-plan" >"$tmp/config"
             printf '%s\n' "$expiration" >"$tmp/expiration"
 
             kubectl --context "$context" -n "$namespace" create secret generic "$secret" \
@@ -266,7 +295,18 @@ function awsp-coder() {
                 | kubectl --context "$context" -n "$namespace" apply -f - >/dev/null \
                 || { echo "Error: Secret を書き込めませんでした"; return 1; }
 
-            echo "✓ $(date +%H:%M:%S) '$AWS_PROFILE' の一時キーを $namespace/$secret に格納しました（期限: ${expiration:-不明}）"
+            # 期限は UTC（例: 2026-10-29T03:30:11+00:00）で返ってくるので JST にして表示する
+            # macOS の date の %z は +0000 の形しか読めないので、Z や +00:00 を直してから渡す。読めなければそのまま表示
+            exp_jst="${expiration:-不明}"
+            if [[ -n "$expiration" ]]; then
+                exp_tz="${expiration%Z}"
+                [[ "$exp_tz" != "$expiration" ]] && exp_tz+="+0000"
+                [[ "${exp_tz[-6]}" == [+-] && "${exp_tz[-3]}" == ":" ]] && exp_tz="${exp_tz[1,-4]}${exp_tz[-2,-1]}"
+                exp_jst=$(TZ=Asia/Tokyo date -j -f '%Y-%m-%dT%H:%M:%S%z' "$exp_tz" '+%Y-%m-%d %H:%M:%S JST' 2>/dev/null) \
+                    || exp_jst="$expiration"
+            fi
+
+            echo "✓ $(date +%H:%M:%S) '$AWS_PROFILE' の一時キーを $namespace/$secret に格納しました（期限: $exp_jst）"
         } always {
             rm -rf "$tmp"
         }
@@ -289,6 +329,7 @@ function awsp-help() {
   awsp-coder        今のプロファイルの一時キーを rancher-desktop の
                     coder/aws-session-token-<プロファイル名> Secret に格納
                     （Coder テンプレートの AWS profile に同じ名前を入れると読み込まれる）
+                    ワークスペースでは <プロファイル名> / tofu-plan / tfstate-access の 3 プロファイルになる
   awsp-coder -w     上を AWSP_CODER_INTERVAL 秒（既定 300 秒）ごとに繰り返す（--watch でも可）
                     aws login の一時キーは 15 分で切れるので、ワークスペースで使う間は動かしておく
 
