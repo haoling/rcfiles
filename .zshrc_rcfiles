@@ -141,7 +141,8 @@
 # 8ビット文字をそのまま表示する
   setopt PRINT_EIGHT_BIT
 
-
+# kubep
+source ~/.rcfiles/shell_functions/kube_context_switcher.zsh
 
 # gpg-agent
 function gpg-agent-start() {
