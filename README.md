@@ -9,7 +9,7 @@ git clone https://github.com/haoling/rcfiles.git ~/.rcfiles
 sh ~/.rcfiles/ln_rcfiles.sh
 ```
 
-`ln_rcfiles.sh` は標準の機能（zsh・git・vim・tmux・screen・launcher・pinentry-notify）をまとめてインストールします。標準かどうかは、各機能の `setup.d/*.yml` の `default: true` で決まります。何度実行しても大丈夫です。
+`ln_rcfiles.sh` は標準の機能（zsh・git・vim・tmux・screen・launcher・pinentry-notify）をまとめてインストールします。標準かどうかは、各機能の `setup.d/*.yml` の `default: true` で決まります。ただし、zsh・git・vim・tmux・screen は、そのコマンドが入っていない環境では飛ばします（あとで入れたときは、もう一度実行してください）。何度実行しても大丈夫です。
 
 ## 機能を選んでインストール・アンインストールする
 
