@@ -1,0 +1,11 @@
+description: 2行のプロンプト（ユーザー@ホスト、カレントディレクトリ、git のブランチ）にする。~/.zshrc の最後で読み込む
+
+# .zshrc_rcfiles が設定する PROMPT を上書きするので、最後に足す
+# .zshrc.2line_prompt_1 は .zshrc.bash_prompt を先に読み込む必要があり、色（fg / reset_color）も使う
+file: .zshrc
+where: bottom
+marker: .zshrc.2line_prompt_1
+text: |
+  autoload -Uz colors && colors
+  [ -f ~/.rcfiles/.zshrc.bash_prompt ] && source ~/.rcfiles/.zshrc.bash_prompt
+  [ -f ~/.rcfiles/.zshrc.2line_prompt_1 ] && source ~/.rcfiles/.zshrc.2line_prompt_1
