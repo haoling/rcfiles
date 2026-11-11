@@ -1,0 +1,12 @@
+description: ~/.tmux.conf と .mytmux / .mytmux2 / .mytmux3 / .tmuxssh をリンクする
+default: true
+
+# tmux コマンドがある環境だけ
+requires_command: tmux
+
+link:
+  - .tmux.conf
+  - .mytmux
+  - .mytmux2
+  - .mytmux3
+  - .tmuxssh

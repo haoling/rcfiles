@@ -1,0 +1,9 @@
+description: AWS_PROFILE の切り替え関数（awsp）を ~/.zshrc の最後で読み込む
+
+# ~/.aws がある環境だけ
+requires_dir: .aws
+
+file: .zshrc
+where: bottom
+marker: aws_profile_switcher.zsh
+text: '[ -f ~/.rcfiles/shell_functions/aws_profile_switcher.zsh ] && source ~/.rcfiles/shell_functions/aws_profile_switcher.zsh'

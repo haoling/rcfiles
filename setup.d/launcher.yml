@@ -1,0 +1,5 @@
+description: ~/.mylauncher をリンクする（~/.mylaunchers のコマンドを選んで実行）
+default: true
+
+link:
+  - .mylauncher

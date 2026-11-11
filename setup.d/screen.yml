@@ -1,0 +1,10 @@
+description: ~/.screenrc と .myscreen / .myscreen2 をリンクする
+default: true
+
+# screen コマンドがある環境だけ
+requires_command: screen
+
+link:
+  - .screenrc
+  - .myscreen
+  - .myscreen2

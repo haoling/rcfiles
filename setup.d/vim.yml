@@ -1,0 +1,8 @@
+description: ~/.vimrc をリンクする
+default: true
+
+# vim コマンドがある環境だけ
+requires_command: vim
+
+link:
+  - .vimrc

@@ -1,0 +1,10 @@
+description: ~/.gitconfig の先頭で .gitconfig_rcfiles を [include] する
+default: true
+
+# git コマンドがある環境だけ
+requires_command: git
+
+file: .gitconfig
+where: top
+marker: .rcfiles/.gitconfig_rcfiles
+text: "[include]\n\tpath = ~/.rcfiles/.gitconfig_rcfiles"

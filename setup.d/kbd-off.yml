@@ -1,0 +1,16 @@
+description: 外付けキーボード接続中は内蔵キーボードを無効にする（macOS、要 swiftc）
+
+os: darwin
+
+# link や text がないので、状態はこのスクリプトで答える（on / off / partial）
+status: |
+  if [ -f Library/LaunchAgents/jp.fei-yen.kbd-off.plist ]; then echo on; else echo off; fi
+
+install: |
+  zsh "$RCDIR/kbd-off/install.sh"
+
+uninstall: |
+  launchctl bootout "gui/$(id -u)/jp.fei-yen.kbd-off" 2>/dev/null
+  rm -f Library/LaunchAgents/jp.fei-yen.kbd-off.plist && msg "削除: ~/Library/LaunchAgents/jp.fei-yen.kbd-off.plist"
+  zsh "$RCDIR/kbd-off/on.sh"
+  msg "システム設定の「入力監視」から kbd-off-agent を削除しておくと安心です"

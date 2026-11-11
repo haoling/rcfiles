@@ -1,0 +1,10 @@
+description: ~/.zshrc の先頭で .zshrc_rcfiles を読み込む
+default: true
+
+# zsh コマンドがある環境だけ
+requires_command: zsh
+
+file: .zshrc
+where: top
+marker: .rcfiles/.zshrc_rcfiles
+text: '[ -f ~/.rcfiles/.zshrc_rcfiles ] && source ~/.rcfiles/.zshrc_rcfiles'
