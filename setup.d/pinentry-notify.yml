@@ -1,0 +1,21 @@
+description: GPG 鍵の使用前に要求元を確認する（~/.gnupg/pinentry-notify.py、macOS）
+default: true
+
+# ~/.gnupg があるときだけ使える
+requires_dir: .gnupg
+
+# 「リンクを置く場所: リポジトリの中のファイル」
+link:
+  - ".gnupg/pinentry-notify.py: gnupg/pinentry-notify.py"
+
+install: |
+  if ! grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
+    msg "使うには ~/.gnupg/gpg-agent.conf の pinentry-program を次のようにしてください:"
+    msg "  pinentry-program $HOME/.gnupg/pinentry-notify.py"
+  fi
+
+uninstall: |
+  if grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
+    warn "~/.gnupg/gpg-agent.conf の pinentry-program が pinentry-notify.py のままです。"
+    warn "元の pinentry に戻して gpgconf --kill gpg-agent を実行してください"
+  fi

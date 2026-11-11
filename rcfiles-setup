@@ -7,24 +7,23 @@
 #   rcfiles-setup uninstall <機能>... 指定した機能をアンインストールする
 #   rcfiles-setup defaults            標準の機能をインストールする（ln_rcfiles.sh から呼ばれる）
 #
+# 機能は setup.d/<名前>.yml に1ファイルずつ書く（形式は setup.d/README.md）。
+# ファイルを足すだけで、一覧に出るようになる。
+# YAML は rcfiles-setup.awk で読むので、書けるのは README.md に書いた形だけ。
+#
 # 何度実行しても大丈夫です。POSIX sh で書いているので、macOS でも Linux でも動きます。
 
 RCDIR=$(cd "$(dirname "$0")" && pwd)
+SETUPD=$RCDIR/setup.d
+AWKFILE=$RCDIR/rcfiles-setup.awk
 cd "$HOME" || exit 1
 
-# ホームに置くリンクの指し先。~/.rcfiles にあるときは、これまでと同じ相対パスにする
+# ホームに置くリンクの指し先。~/.rcfiles にあるときは、相対パスにする
 if [ "$RCDIR" = "$HOME/.rcfiles" ]; then
 	LINK_BASE=.rcfiles
 else
 	LINK_BASE=$RCDIR
 fi
-
-MODULES="zshrc gitconfig vim tmux screen launcher awsp pinentry kbdoff"
-DEFAULTS="zshrc gitconfig vim tmux screen launcher pinentry"
-
-ZSHRC_LOADER='[ -f ~/.rcfiles/.zshrc_rcfiles ] && source ~/.rcfiles/.zshrc_rcfiles'
-GITCONFIG_PATH_LINE='	path = ~/.rcfiles/.gitconfig_rcfiles'
-AWSP_LINE='[ -f ~/.rcfiles/shell_functions/aws_profile_switcher.zsh ] && source ~/.rcfiles/shell_functions/aws_profile_switcher.zsh'
 
 if [ -t 1 ]; then
 	C_ON=$(printf '\033[32m'); C_PART=$(printf '\033[33m'); C_DIM=$(printf '\033[2m')
@@ -33,11 +32,22 @@ else
 	C_ON=; C_PART=; C_DIM=; C_BOLD=; C_REV=; C_RST=
 fi
 
+# setup.d/*.yml の install / uninstall / status に書いたシェルからも使える
 msg() { printf '  %s\n' "$*"; }
 warn() { printf '  %s! %s%s\n' "$C_PART" "$*" "$C_RST"; }
 
+# 読み込み中に見つけた問題（YAML の書き間違いなど）
+WARNINGS=
+add_warning() { WARNINGS="$WARNINGS$*
+"; }
+show_warnings() {
+	[ -n "$WARNINGS" ] || return 0
+	printf '%s' "$WARNINGS" | while IFS= read -r l; do warn "$l"; done
+	WARNINGS=
+}
+
 # ---------------------------------------------------------------------------
-# 共通の処理
+# リンク
 
 # usage: link_state <置き場所> <リポジトリ内のパス>
 # 0: rcfiles へのリンクになっている / 1: なっていない
@@ -47,6 +57,22 @@ link_state() {
 		*.rcfiles/"$2" | "$RCDIR/$2") return 0 ;;
 	esac
 	return 1
+}
+
+# usage: link_target <置き場所> <リポジトリ内のパス>  リンクの指し先を表示する
+link_target() {
+	if [ "$LINK_BASE" = .rcfiles ]; then
+		rest=$1; up=
+		while :; do
+			case $rest in
+				*/*) up=$up../; rest=${rest#*/} ;;
+				*) break ;;
+			esac
+		done
+		echo "$up$LINK_BASE/$2"
+	else
+		echo "$RCDIR/$2"
+	fi
 }
 
 # usage: link_install <置き場所> <リンクの指し先> <リポジトリ内のパス>
@@ -61,6 +87,8 @@ link_install() {
 		[ -e "$bak" ] && bak=$1.rcfiles-bak.$(date +%Y%m%d%H%M%S)
 		mv "$1" "$bak" && msg "既存の ~/$1 を ~/$bak に退避しました"
 	fi
+	d=$(dirname "$1")
+	[ -d "$d" ] || mkdir -p "$d"
 	ln -s "$2" "$1" && msg "リンク: ~/$1 -> $2"
 }
 
@@ -77,20 +105,32 @@ link_uninstall() {
 	fi
 }
 
-# usage: links_status <パス>...（ホーム直下にリンクするファイル）
-links_status() {
-	n=0; ok=0
-	for f in "$@"; do
-		n=$((n + 1))
-		link_state "$f" "$f" && ok=$((ok + 1))
-	done
-	if [ $ok -eq $n ]; then echo on
-	elif [ $ok -eq 0 ]; then echo off
-	else echo partial
-	fi
+# link: のリスト1行を L_DEST（置き場所）と L_SRC（リポジトリ内のパス）に分ける
+#   ".vimrc"                           -> 同じ名前
+#   ".gnupg/x.py: gnupg/x.py"          -> 置き場所: リポジトリ内のパス
+split_link() {
+	case $1 in
+		*': '*) L_DEST=${1%%: *}; L_SRC=${1#*: } ;;
+		*) L_DEST=$1; L_SRC=$1 ;;
+	esac
 }
-links_install() { for f in "$@"; do link_install "$f" "$LINK_BASE/$f" "$f"; done; }
-links_uninstall() { for f in "$@"; do link_uninstall "$f" "$f"; done; }
+
+# リンクの数と、リンク済みの数を「数 数」の形で表示する
+link_units() {
+	n=0; ok=0
+	while IFS= read -r item; do
+		[ -n "$item" ] || continue
+		split_link "$item"
+		n=$((n + 1))
+		link_state "$L_DEST" "$L_SRC" && ok=$((ok + 1))
+	done <<EOF
+$y_link
+EOF
+	echo "$n $ok"
+}
+
+# ---------------------------------------------------------------------------
+# ファイルへの行の追加・削除（file / where / marker / text）
 
 # usage: write_file <ファイル> < 新しい内容
 # 権限やリンク元を変えないように、上書きで書き戻す
@@ -100,166 +140,114 @@ write_file() {
 	rm -f "$tmp"
 }
 
-# usage: prepend_loader <ファイル> <目印> <先頭に入れる内容>
-prepend_loader() {
-	if [ -L "$1" ]; then rm "$1"; fi
-	if ! grep -qsF "$2" "$1"; then
+text_present() { grep -qsF -- "$y_marker" "$y_file"; }
+
+text_install() {
+	text_present && return 0
+	if [ -L "$y_file" ]; then
+		case "$(readlink "$y_file")" in
+			*.rcfiles/* | "$RCDIR"/*) rm "$y_file" ;;
+			*) warn "~/$y_file は別の場所へのリンクなので、変更しません"; return 0 ;;
+		esac
+	fi
+	if [ "$y_where" = bottom ]; then
+		# 末尾が改行で終わっていなければ足してから追加する
+		if [ -s "$y_file" ] && [ -n "$(tail -c 1 "$y_file")" ]; then printf '\n' >> "$y_file"; fi
+		printf '%s\n' "$y_text" >> "$y_file" && msg "~/$y_file の最後に追加しました"
+	else
 		{
-			printf '%s\n' "$3"
-			if [ -f "$1" ]; then cat "$1"; fi
-		} > "$1.tmp" && mv "$1.tmp" "$1" && msg "~/$1 の先頭に読み込みを追加しました"
+			printf '%s\n' "$y_text"
+			if [ -f "$y_file" ]; then cat "$y_file"; fi
+		} | write_file "$y_file" && msg "~/$y_file の先頭に追加しました"
 	fi
 }
 
-# usage: remove_line <ファイル> <行>（完全に一致する行を消す）
-remove_line() {
-	[ -f "$1" ] || return 0
-	if grep -qxF "$2" "$1"; then
-		grep -vxF "$2" "$1" | write_file "$1"
-		msg "~/$1 から削除: $2"
-	fi
-}
-
-# ---------------------------------------------------------------------------
-# 機能の定義
-#   m_<名前>_title / _desc / _status (on|off|partial|na) / _install / _uninstall
-
-m_zshrc_title() { echo "zsh"; }
-m_zshrc_desc() { echo "~/.zshrc の先頭で .zshrc_rcfiles を読み込む"; }
-m_zshrc_status() { grep -qsF '.rcfiles/.zshrc_rcfiles' .zshrc && echo on || echo off; }
-m_zshrc_install() { prepend_loader .zshrc '.rcfiles/.zshrc_rcfiles' "$ZSHRC_LOADER"; }
-m_zshrc_uninstall() {
-	remove_line .zshrc "$ZSHRC_LOADER"
-	if grep -qsF '.rcfiles/.zshrc_rcfiles' .zshrc; then
-		warn "~/.zshrc に .zshrc_rcfiles を読み込む行が残っています。手で消してください"
-	fi
-}
-
-m_gitconfig_title() { echo "git"; }
-m_gitconfig_desc() { echo "~/.gitconfig の先頭で .gitconfig_rcfiles を [include] する"; }
-m_gitconfig_status() { grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig && echo on || echo off; }
-m_gitconfig_install() {
-	prepend_loader .gitconfig '.rcfiles/.gitconfig_rcfiles' "$(printf '[include]\n%s' "$GITCONFIG_PATH_LINE")"
-}
-m_gitconfig_uninstall() {
-	[ -f .gitconfig ] || return 0
-	grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig || return 0
-	# path の行を消し、それで空になった [include] も消す
-	awk '
+# text と同じ行が並んでいるところを消す
+text_uninstall() {
+	[ -f "$y_file" ] || return 0
+	text_present || return 0
+	RC_TEXT=$y_text awk '
+		BEGIN { n = split(ENVIRON["RC_TEXT"], t, "\n") }
 		{ line[NR] = $0 }
 		END {
-			for (i = 1; i <= NR; i++)
-				if (line[i] ~ /^[ \t]*path[ \t]*=[ \t]*~\/\.rcfiles\/\.gitconfig_rcfiles[ \t]*$/) drop[i] = 1
 			for (i = 1; i <= NR; i++) {
-				if (line[i] !~ /^[ \t]*\[include\][ \t]*$/) continue
-				had = 0; empty = 1
-				for (j = i + 1; j <= NR; j++) {
-					if (drop[j]) { had = 1; continue }
-					if (line[j] ~ /^[ \t]*([#;].*)?$/) continue
-					if (line[j] ~ /^[ \t]*\[/) break
-					empty = 0; break
-				}
-				if (had && empty) drop[i] = 1
+				m = (i + n - 1 <= NR)
+				for (j = 1; m && j <= n; j++) if (line[i + j - 1] != t[j]) m = 0
+				if (m) { i += n - 1; continue }
+				print line[i]
 			}
-			for (i = 1; i <= NR; i++) if (!drop[i]) print line[i]
-		}' .gitconfig | write_file .gitconfig
-	msg "~/.gitconfig から .gitconfig_rcfiles の [include] を削除しました"
-	if grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig; then
-		warn "~/.gitconfig に .gitconfig_rcfiles を読み込む行が残っています。手で消してください"
+		}' "$y_file" | write_file "$y_file"
+	if text_present; then
+		warn "~/$y_file に「$y_marker」を含む行が残っています。手で消してください"
+	else
+		msg "~/$y_file から削除しました"
 	fi
-}
-
-VIM_FILES=".vimrc"
-m_vim_title() { echo "vim"; }
-m_vim_desc() { echo "~/.vimrc をリンクする"; }
-m_vim_status() { links_status $VIM_FILES; }
-m_vim_install() { links_install $VIM_FILES; }
-m_vim_uninstall() { links_uninstall $VIM_FILES; }
-
-TMUX_FILES=".tmux.conf .mytmux .mytmux2 .mytmux3 .tmuxssh"
-m_tmux_title() { echo "tmux"; }
-m_tmux_desc() { echo "~/.tmux.conf と .mytmux / .mytmux2 / .mytmux3 / .tmuxssh をリンクする"; }
-m_tmux_status() { links_status $TMUX_FILES; }
-m_tmux_install() { links_install $TMUX_FILES; }
-m_tmux_uninstall() { links_uninstall $TMUX_FILES; }
-
-SCREEN_FILES=".screenrc .myscreen .myscreen2"
-m_screen_title() { echo "screen"; }
-m_screen_desc() { echo "~/.screenrc と .myscreen / .myscreen2 をリンクする"; }
-m_screen_status() { links_status $SCREEN_FILES; }
-m_screen_install() { links_install $SCREEN_FILES; }
-m_screen_uninstall() { links_uninstall $SCREEN_FILES; }
-
-LAUNCHER_FILES=".mylauncher"
-m_launcher_title() { echo "launcher"; }
-m_launcher_desc() { echo "~/.mylauncher をリンクする（~/.mylaunchers のコマンドを選んで実行）"; }
-m_launcher_status() { links_status $LAUNCHER_FILES; }
-m_launcher_install() { links_install $LAUNCHER_FILES; }
-m_launcher_uninstall() { links_uninstall $LAUNCHER_FILES; }
-
-m_awsp_title() { echo "awsp"; }
-m_awsp_desc() { echo "AWS_PROFILE の切り替え関数を ~/.zshrc の最後で読み込む"; }
-m_awsp_status() { grep -qsxF "$AWSP_LINE" .zshrc && echo on || echo off; }
-m_awsp_install() {
-	grep -qsxF "$AWSP_LINE" .zshrc && return 0
-	if grep -qsF 'aws_profile_switcher.zsh' .zshrc; then
-		warn "~/.zshrc には aws_profile_switcher.zsh を読み込む行がすでにあります"
-	fi
-	printf '%s\n' "$AWSP_LINE" >> .zshrc && msg "~/.zshrc の最後に追加: $AWSP_LINE"
-}
-m_awsp_uninstall() {
-	remove_line .zshrc "$AWSP_LINE"
-	if grep -qsF 'aws_profile_switcher.zsh' .zshrc; then
-		warn "~/.zshrc に aws_profile_switcher.zsh を読み込む行が残っています。手で消してください"
-	fi
-}
-
-m_pinentry_title() { echo "pinentry-notify"; }
-m_pinentry_desc() { echo "GPG 鍵の使用前に要求元を確認する（~/.gnupg/pinentry-notify.py、macOS）"; }
-m_pinentry_status() {
-	[ -d .gnupg ] || { echo na; return; }
-	link_state .gnupg/pinentry-notify.py gnupg/pinentry-notify.py && echo on || echo off
-}
-m_pinentry_install() {
-	if [ "$LINK_BASE" = .rcfiles ]; then t=../.rcfiles/gnupg/pinentry-notify.py; else t=$RCDIR/gnupg/pinentry-notify.py; fi
-	link_install .gnupg/pinentry-notify.py "$t" gnupg/pinentry-notify.py
-	if ! grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
-		msg "使うには ~/.gnupg/gpg-agent.conf の pinentry-program を次のようにしてください:"
-		msg "  pinentry-program $HOME/.gnupg/pinentry-notify.py"
-	fi
-}
-m_pinentry_uninstall() {
-	link_uninstall .gnupg/pinentry-notify.py gnupg/pinentry-notify.py
-	if grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
-		warn "~/.gnupg/gpg-agent.conf の pinentry-program が pinentry-notify.py のままです。"
-		warn "元の pinentry に戻して gpgconf --kill gpg-agent を実行してください"
-	fi
-}
-
-KBDOFF_LABEL=jp.fei-yen.kbd-off
-KBDOFF_PLIST=Library/LaunchAgents/$KBDOFF_LABEL.plist
-m_kbdoff_title() { echo "kbd-off"; }
-m_kbdoff_desc() { echo "外付けキーボード接続中は内蔵キーボードを無効にする（macOS、要 swiftc）"; }
-m_kbdoff_status() {
-	[ "$(uname -s)" = Darwin ] || { echo na; return; }
-	[ -f "$KBDOFF_PLIST" ] && echo on || echo off
-}
-m_kbdoff_install() { zsh "$RCDIR/kbd-off/install.sh"; }
-m_kbdoff_uninstall() {
-	launchctl bootout "gui/$(id -u)/$KBDOFF_LABEL" 2>/dev/null
-	rm -f "$KBDOFF_PLIST" && msg "削除: ~/$KBDOFF_PLIST"
-	zsh "$RCDIR/kbd-off/on.sh"
-	msg "システム設定の「入力監視」から kbd-off-agent を削除しておくと安心です"
 }
 
 # ---------------------------------------------------------------------------
+# 機能の読み込み
 
-m() { eval "m_$1_$2"; }
-
-is_module() {
-	for x in $MODULES; do [ "$x" = "$1" ] && return 0; done
-	return 1
+# setup.d/*.yml のファイル名（.yml を除く）を IDS に入れる
+scan() {
+	IDS=
+	for f in "$SETUPD"/*.yml; do
+		[ -f "$f" ] || continue
+		id=${f##*/}; id=${id%.yml}
+		case $id in
+			*[!A-Za-z0-9._-]*) add_warning "setup.d/$id.yml: 名前に使えるのは英数字と . _ - だけです。飛ばします"; continue ;;
+		esac
+		IDS="$IDS $id"
+	done
 }
+
+# usage: load <名前>  setup.d/<名前>.yml を y_* の変数に読み込む
+load() {
+	y_description= y_default= y_os= y_requires_dir= y_link= y_file= y_where= y_marker=
+	y_text= y_status= y_install= y_uninstall= y_warn=
+	[ -f "$SETUPD/$1.yml" ] || return 1
+	out=$(awk -f "$AWKFILE" "$SETUPD/$1.yml") || { add_warning "setup.d/$1.yml: 読めませんでした"; return 1; }
+	eval "$out"
+	if [ -n "$y_warn" ]; then
+		while IFS= read -r l; do add_warning "setup.d/$1.yml: $l"; done <<EOF
+$y_warn
+EOF
+	fi
+	[ -n "$y_where" ] || y_where=top
+	case $y_where in
+		top | bottom) ;;
+		*) add_warning "setup.d/$1.yml: where は top か bottom です（$y_where）。top として扱います"; y_where=top ;;
+	esac
+	if [ -n "$y_text" ] && [ -z "$y_file" ]; then
+		add_warning "setup.d/$1.yml: text には file が必要です。text は使いません"
+		y_text=
+	fi
+	if [ -n "$y_text" ] && [ -z "$y_marker" ]; then
+		y_marker=$(printf '%s\n' "$y_text" | head -n 1)
+	fi
+	return 0
+}
+
+# 読み込み済みの機能の状態を表示する: on / off / partial / na（この環境では使えない）
+module_status() {
+	if [ -n "$y_os" ] && [ "$(uname -s | tr 'A-Z' 'a-z')" != "$y_os" ]; then echo na; return; fi
+	if [ -n "$y_requires_dir" ] && [ ! -d "$y_requires_dir" ]; then echo na; return; fi
+	if [ -n "$y_status" ]; then
+		s=$(eval "$y_status")
+		case $s in on | off | partial) echo "$s" ;; *) echo off ;; esac
+		return
+	fi
+	units=$(link_units); n=${units% *}; ok=${units#* }
+	if [ -n "$y_text" ]; then
+		n=$((n + 1))
+		text_present && ok=$((ok + 1))
+	fi
+	if [ "$n" -eq 0 ] || [ "$ok" -eq 0 ]; then echo off
+	elif [ "$ok" -eq "$n" ]; then echo on
+	else echo partial
+	fi
+}
+
+is_module() { [ -f "$SETUPD/$1.yml" ]; }
 
 state_label() {
 	case $1 in
@@ -271,19 +259,47 @@ state_label() {
 }
 
 do_install() {
-	printf '%s[インストール] %s%s\n' "$C_BOLD" "$(m "$1" title)" "$C_RST"
-	m "$1" install
-}
-do_uninstall() {
-	printf '%s[アンインストール] %s%s\n' "$C_BOLD" "$(m "$1" title)" "$C_RST"
-	m "$1" uninstall
+	load "$1" || return 1
+	printf '%s[インストール] %s%s\n' "$C_BOLD" "$1" "$C_RST"
+	while IFS= read -r item; do
+		[ -n "$item" ] || continue
+		split_link "$item"
+		link_install "$L_DEST" "$(link_target "$L_DEST" "$L_SRC")" "$L_SRC"
+	done <<EOF
+$y_link
+EOF
+	[ -n "$y_text" ] && text_install
+	[ -n "$y_install" ] && eval "$y_install"
+	return 0
 }
 
+do_uninstall() {
+	load "$1" || return 1
+	printf '%s[アンインストール] %s%s\n' "$C_BOLD" "$1" "$C_RST"
+	while IFS= read -r item; do
+		[ -n "$item" ] || continue
+		split_link "$item"
+		link_uninstall "$L_DEST" "$L_SRC"
+	done <<EOF
+$y_link
+EOF
+	[ -n "$y_text" ] && text_uninstall
+	[ -n "$y_uninstall" ] && eval "$y_uninstall"
+	return 0
+}
+
+# ---------------------------------------------------------------------------
+# コマンド
+
 cmd_list() {
-	for id in $MODULES; do
-		printf '  %-10s %-16s %s\n' "$id" "$(m $id title)" "$(state_label "$(m $id status)")"
-		printf '  %-10s %s%s%s\n' "" "$C_DIM" "$(m $id desc)" "$C_RST"
+	scan
+	for id in $IDS; do
+		load "$id" || continue
+		def=; [ "$y_default" = true ] && def="  ${C_DIM}[標準]${C_RST}"
+		printf '  %-18s %s%s\n' "$id" "$(state_label "$(module_status)")" "$def"
+		printf '  %-18s %s%s%s\n' "" "$C_DIM" "$y_description" "$C_RST"
 	done
+	show_warnings
 }
 
 # usage: cmd_apply install|uninstall <機能>...
@@ -294,19 +310,26 @@ cmd_apply() {
 		is_module "$id" || { echo "そのような機能はありません: $id（rcfiles-setup list で一覧）" >&2; return 1; }
 	done
 	for id in "$@"; do
-		if [ "$(m "$id" status)" = na ]; then
-			warn "$(m "$id" title) はこの環境では使えないので、飛ばします"
+		load "$id" || continue
+		if [ "$(module_status)" = na ]; then
+			warn "$id はこの環境では使えないので、飛ばします"
 			continue
 		fi
 		"do_$action" "$id"
 	done
+	show_warnings
 }
 
+# default: true の機能をインストールする
 cmd_defaults() {
-	for id in $DEFAULTS; do
-		[ "$(m "$id" status)" = na ] && continue
+	scan
+	for id in $IDS; do
+		load "$id" || continue
+		[ "$y_default" = true ] || continue
+		[ "$(module_status)" = na ] && continue
 		do_install "$id"
 	done
+	show_warnings
 }
 
 # ---------------------------------------------------------------------------
@@ -319,7 +342,7 @@ restore_tty() {
 	printf '\033[?25h' >/dev/tty
 }
 
-# 1 キー読んで KEY に入れる: up down space enter quit all none か、その文字
+# 1 キー読んで KEY に入れる: up down space enter quit か、その文字
 read_key() {
 	c=$(dd bs=1 count=1 2>/dev/null </dev/tty)
 	case $c in
@@ -342,13 +365,14 @@ read_key() {
 	esac
 }
 
+# 画面の項目は番号（1 から total）で持つ: id_N, desc_N, st_N（今の状態）, sel_N（1: 入れる / 0: 入れない）
 draw_menu() {
 	printf '\033[H\033[2J'
-	printf '%srcfiles の機能を選んでください%s  %s(%s)%s\n\n' "$C_BOLD" "$C_RST" "$C_DIM" "$RCDIR" "$C_RST"
+	printf '%srcfiles の機能を選んでください%s  %s(%s)%s\n\n' "$C_BOLD" "$C_RST" "$C_DIM" "$SETUPD" "$C_RST"
 	i=0
-	for id in $MODULES; do
+	while [ $i -lt $total ]; do
 		i=$((i + 1))
-		eval "st=\$st_$id sel=\$sel_$id"
+		eval "id=\$id_$i st=\$st_$i sel=\$sel_$i"
 		if [ "$st" = na ]; then box='   '
 		elif [ "$sel" = 1 ]; then box='[x]'
 		else box='[ ]'
@@ -360,25 +384,44 @@ draw_menu() {
 			elif [ "$sel" = 0 ] && [ "$st" != off ]; then mark="${C_PART}-${C_RST}"
 			fi
 		fi
-		line=$(printf '%d %s %-16s' "$i" "$box" "$(m $id title)")
+		if [ $i -le 9 ]; then num=$i; else num=' '; fi
+		line=$(printf '%s %s %-18s' "$num" "$box" "$id")
 		if [ $i -eq "$cur" ]; then
 			printf ' %s %s%s%s  %s\n' "$mark" "$C_REV" "$line" "$C_RST" "$(state_label "$st")"
 		else
 			printf ' %s %s  %s\n' "$mark" "$line" "$(state_label "$st")"
 		fi
-		[ $i -eq "$cur" ] && desc=$(m $id desc)
 	done
+	eval "desc=\$desc_$cur"
 	printf '\n  %s%s%s\n\n' "$C_DIM" "$desc" "$C_RST"
-	printf '  ↑↓/jk: 移動  Space/数字: 切り替え  a: 全部選ぶ  n: 全部外す  r: 元に戻す\n'
+	printf '  ↑↓/jk: 移動  Space/数字(1-9): 切り替え  a: 全部選ぶ  n: 全部外す  r: 元に戻す\n'
 	printf '  Enter: 決定  q: やめる\n'
 	printf '  %s+%s インストールする  %s-%s アンインストールする\n' "$C_ON" "$C_RST" "$C_PART" "$C_RST"
 }
 
 toggle() {
-	id=$(echo $MODULES | cut -d' ' -f"$1")
-	eval "st=\$st_$id sel=\$sel_$id"
+	eval "st=\$st_$1 sel=\$sel_$1"
 	[ "$st" = na ] && return
-	if [ "$sel" = 1 ]; then eval "sel_$id=0"; else eval "sel_$id=1"; fi
+	if [ "$sel" = 1 ]; then eval "sel_$1=0"; else eval "sel_$1=1"; fi
+}
+
+# usage: select_all 1|0 | select_current  全部選ぶ / 全部外す / 今の状態に戻す
+select_all() {
+	i=0
+	while [ $i -lt $total ]; do
+		i=$((i + 1))
+		eval "st=\$st_$i"
+		[ "$st" = na ] && continue
+		eval "sel_$i=$1"
+	done
+}
+select_current() {
+	i=0
+	while [ $i -lt $total ]; do
+		i=$((i + 1))
+		eval "st=\$st_$i"
+		case $st in on | partial) eval "sel_$i=1" ;; *) eval "sel_$i=0" ;; esac
+	done
 }
 
 cmd_interactive() {
@@ -387,13 +430,25 @@ cmd_interactive() {
 		usage >&2
 		return 1
 	fi
+	scan
 	total=0
-	for id in $MODULES; do
+	for id in $IDS; do
+		load "$id" || continue
 		total=$((total + 1))
-		st=$(m $id status)
-		eval "st_$id=\$st"
-		case $st in on | partial) eval "sel_$id=1" ;; *) eval "sel_$id=0" ;; esac
+		st=$(module_status)
+		eval "id_$total=\$id desc_$total=\$y_description st_$total=\$st"
 	done
+	if [ $total -eq 0 ]; then
+		show_warnings
+		echo "$SETUPD に機能がありません（*.yml を置いてください）" >&2
+		return 1
+	fi
+	if [ -n "$WARNINGS" ]; then
+		show_warnings
+		printf '\nEnter で続行 '
+		read -r _ </dev/tty
+	fi
+	select_current
 	cur=1
 
 	TTY_SAVED=$(stty -g </dev/tty)
@@ -410,9 +465,9 @@ cmd_interactive() {
 			down) cur=$((cur + 1)); [ $cur -gt $total ] && cur=1 ;;
 			space) toggle $cur ;;
 			[1-9]) [ "$KEY" -le $total ] && { cur=$KEY; toggle $cur; } ;;
-			a) for id in $MODULES; do eval "[ \"\$st_$id\" = na ] || sel_$id=1"; done ;;
-			n) for id in $MODULES; do eval "sel_$id=0"; done ;;
-			r) for id in $MODULES; do eval "case \$st_$id in on|partial) sel_$id=1;; *) sel_$id=0;; esac"; done ;;
+			a) select_all 1 ;;
+			n) select_all 0 ;;
+			r) select_current ;;
 			enter) break ;;
 			quit) restore_tty; printf '\033[H\033[2J'; echo "何もしませんでした"; return 0 ;;
 		esac
@@ -421,8 +476,10 @@ cmd_interactive() {
 	printf '\033[H\033[2J'
 
 	to_install=; to_uninstall=
-	for id in $MODULES; do
-		eval "st=\$st_$id sel=\$sel_$id"
+	i=0
+	while [ $i -lt $total ]; do
+		i=$((i + 1))
+		eval "id=\$id_$i st=\$st_$i sel=\$sel_$i"
 		[ "$st" = na ] && continue
 		if [ "$sel" = 1 ] && [ "$st" != on ]; then to_install="$to_install $id"
 		elif [ "$sel" = 0 ] && [ "$st" != off ]; then to_uninstall="$to_uninstall $id"
@@ -434,14 +491,15 @@ cmd_interactive() {
 	fi
 
 	echo "次の変更をします:"
-	for id in $to_install; do printf '  %s+ インストール%s     %s\n' "$C_ON" "$C_RST" "$(m $id title)"; done
-	for id in $to_uninstall; do printf '  %s- アンインストール%s %s\n' "$C_PART" "$C_RST" "$(m $id title)"; done
+	for id in $to_install; do printf '  %s+ インストール%s     %s\n' "$C_ON" "$C_RST" "$id"; done
+	for id in $to_uninstall; do printf '  %s- アンインストール%s %s\n' "$C_PART" "$C_RST" "$id"; done
 	printf '\nよろしいですか? [y/N] '
 	read -r ans </dev/tty
 	case $ans in y | Y | yes) ;; *) echo "やめました"; return 0 ;; esac
 	echo
 	for id in $to_uninstall; do do_uninstall "$id"; done
 	for id in $to_install; do do_install "$id"; done
+	show_warnings
 	echo
 	echo "完了しました。zsh の設定を変えたときは、新しいシェルを開くと反映されます"
 }
@@ -454,6 +512,8 @@ usage() {
   rcfiles-setup install <機能>...   指定した機能をインストールする
   rcfiles-setup uninstall <機能>... 指定した機能をアンインストールする
   rcfiles-setup defaults            標準の機能をまとめてインストールする
+
+機能は setup.d/<名前>.yml です。ファイルを足すと一覧に出ます（形式は setup.d/README.md）
 EOF
 }
 

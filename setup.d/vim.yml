@@ -1,0 +1,5 @@
+description: ~/.vimrc をリンクする
+default: true
+
+link:
+  - .vimrc

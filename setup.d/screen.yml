@@ -1,0 +1,7 @@
+description: ~/.screenrc と .myscreen / .myscreen2 をリンクする
+default: true
+
+link:
+  - .screenrc
+  - .myscreen
+  - .myscreen2

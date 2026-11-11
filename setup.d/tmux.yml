@@ -1,0 +1,9 @@
+description: ~/.tmux.conf と .mytmux / .mytmux2 / .mytmux3 / .tmuxssh をリンクする
+default: true
+
+link:
+  - .tmux.conf
+  - .mytmux
+  - .mytmux2
+  - .mytmux3
+  - .tmuxssh

@@ -9,7 +9,7 @@ git clone https://github.com/haoling/rcfiles.git ~/.rcfiles
 sh ~/.rcfiles/ln_rcfiles.sh
 ```
 
-`ln_rcfiles.sh` は標準の機能（zsh・git・vim・tmux・screen・launcher・pinentry-notify）をまとめてインストールします。何度実行しても大丈夫です。
+`ln_rcfiles.sh` は標準の機能（zsh・git・vim・tmux・screen・launcher・pinentry-notify）をまとめてインストールします。標準かどうかは、各機能の `setup.d/*.yml` の `default: true` で決まります。何度実行しても大丈夫です。
 
 ## 機能を選んでインストール・アンインストールする
 
@@ -44,17 +44,32 @@ rcfiles-setup install awsp          # 指定した機能をインストール
 rcfiles-setup uninstall screen vim  # 指定した機能をアンインストール
 ```
 
+機能は `setup.d/<名前>.yml` に1ファイルずつ書いてあり、ファイル名がそのまま一覧に出ます。
+
 | 機能 | 内容 |
 |---|---|
-| `zshrc` | `~/.zshrc` の先頭で `.zshrc_rcfiles` を読み込む |
-| `gitconfig` | `~/.gitconfig` の先頭で `.gitconfig_rcfiles` を `[include]` する |
+| `zsh` | `~/.zshrc` の先頭で `.zshrc_rcfiles` を読み込む |
+| `git` | `~/.gitconfig` の先頭で `.gitconfig_rcfiles` を `[include]` する |
 | `vim` | `~/.vimrc` をリンクする |
 | `tmux` | `~/.tmux.conf`、`.mytmux`、`.mytmux2`、`.mytmux3`、`.tmuxssh` をリンクする |
 | `screen` | `~/.screenrc`、`.myscreen`、`.myscreen2` をリンクする |
 | `launcher` | `~/.mylauncher` をリンクする |
 | `awsp` | `shell_functions/aws_profile_switcher.zsh` を読み込む行を `~/.zshrc` の最後に追加する（標準では入れない） |
-| `pinentry` | `~/.gnupg/pinentry-notify.py` をリンクする（`~/.gnupg` があるときだけ） |
-| `kbdoff` | `kbd-off/install.sh` で常駐させる。アンインストールで常駐を止める（macOS のみ。標準では入れない） |
+| `pinentry-notify` | `~/.gnupg/pinentry-notify.py` をリンクする（`~/.gnupg` があるときだけ） |
+| `kbd-off` | `kbd-off/install.sh` で常駐させる。アンインストールで常駐を止める（macOS のみ。標準では入れない） |
+
+### 機能を足す
+
+`setup.d/` に `.yml` を1つ置くだけで、一覧に出ます。例えば `setup.d/ripgrep.yml` を作ります。
+
+```yaml
+description: ~/.ripgreprc をリンクする
+default: true
+link:
+  - .ripgreprc
+```
+
+リンクの作り方のほか、`~/.zshrc` などに行を足す書き方や、実行するシェルを書く方法は [setup.d/README.md](setup.d/README.md) にあります。
 
 アンインストールで消すのは、rcfiles が作ったリンクと、rcfiles が追加した行だけです。
 
@@ -218,4 +233,6 @@ printf 'OPTION owner=%d/%d %s\nGETINFO version\nBYE\n' $$ $(id -u) $(hostname) \
 | `shell_functions/middle`, `middle.php` | ファイルの指定行の前後を表示する `middle` コマンド |
 | `gnupg/pinentry-notify.py` | GPG 鍵の使用前に要求元を表示して確認する pinentry の中継スクリプト（macOS） |
 | `rcfiles-setup` | 機能を選んでインストール・アンインストールするスクリプト |
-| `ln_rcfiles.sh` | 標準の機能をまとめてインストールするスクリプト（`rcfiles-setup defaults` を実行） |
+| `rcfiles-setup.awk` | `setup.d/*.yml` を読むための awk スクリプト（`rcfiles-setup` が使う） |
+| `setup.d/*.yml` | `rcfiles-setup` で選べる機能の定義。1ファイルが1機能 |
+| `ln_rcfiles.sh` | 標準（`default: true`）の機能をまとめてインストールするスクリプト（`rcfiles-setup defaults` を実行） |
