@@ -26,8 +26,9 @@ link:
 |---|---|
 | `description` | 説明（1行） |
 | `default` | `true` にすると、`ln_rcfiles.sh` や `rcfiles-setup defaults` でインストールされる。省略すると入らない |
-| `os` | `darwin` か `linux`。違う OS では「この環境では使えません」と出て、選べない |
+| `os` | `darwin` か `linux`。違う OS では「この環境では使えません」と出て、選べない（`requires_dir` と `requires_command` も同じ） |
 | `requires_dir` | ホームからの相対パス。そのディレクトリがないと、使えない扱いになる（例: `.gnupg`） |
+| `requires_command` | コマンド名（スペースで区切って複数）。PATH にないコマンドがあると、使えない扱いになる（例: `aws`） |
 | `link` | ホームに作るシンボリックリンクのリスト（下記） |
 | `file` `where` `marker` `text` | ホームのファイルに行を足す（下記） |
 | `install` `uninstall` | インストール・アンインストールのときに、最後に実行するシェル（下記） |

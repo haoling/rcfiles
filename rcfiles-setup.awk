@@ -12,7 +12,7 @@
 # 読めない行や未知のキーは y_warn にまとめて出力する
 
 BEGIN {
-	nk = split("description default os requires_dir link file where marker text status install uninstall", ks, " ")
+	nk = split("description default os requires_dir requires_command link file where marker text status install uninstall", ks, " ")
 	for (i = 1; i <= nk; i++) known[ks[i]] = 1
 	key = ""; mode = ""; buf = ""; nitems = 0; bi = 0; warn = ""
 }

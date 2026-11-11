@@ -202,7 +202,7 @@ scan() {
 
 # usage: load <名前>  setup.d/<名前>.yml を y_* の変数に読み込む
 load() {
-	y_description= y_default= y_os= y_requires_dir= y_link= y_file= y_where= y_marker=
+	y_description= y_default= y_os= y_requires_dir= y_requires_command= y_link= y_file= y_where= y_marker=
 	y_text= y_status= y_install= y_uninstall= y_warn=
 	[ -f "$SETUPD/$1.yml" ] || return 1
 	out=$(awk -f "$AWKFILE" "$SETUPD/$1.yml") || { add_warning "setup.d/$1.yml: 読めませんでした"; return 1; }
@@ -230,21 +230,28 @@ EOF
 # 読み込み済みの機能の状態を表示する: on / off / partial / na（この環境では使えない）
 module_status() {
 	if [ -n "$y_os" ] && [ "$(uname -s | tr 'A-Z' 'a-z')" != "$y_os" ]; then echo na; return; fi
-	if [ -n "$y_requires_dir" ] && [ ! -d "$y_requires_dir" ]; then echo na; return; fi
+	# ディレクトリやコマンドがなくても、すでに入っているものは外せるようにする
+	missing=
+	if [ -n "$y_requires_dir" ] && [ ! -d "$y_requires_dir" ]; then missing=1; fi
+	for c in $y_requires_command; do
+		command -v "$c" >/dev/null 2>&1 || missing=1
+	done
 	if [ -n "$y_status" ]; then
 		s=$(eval "$y_status")
-		case $s in on | off | partial) echo "$s" ;; *) echo off ;; esac
-		return
+		case $s in on | off | partial) ;; *) s=off ;; esac
+	else
+		units=$(link_units); n=${units% *}; ok=${units#* }
+		if [ -n "$y_text" ]; then
+			n=$((n + 1))
+			text_present && ok=$((ok + 1))
+		fi
+		if [ "$n" -eq 0 ] || [ "$ok" -eq 0 ]; then s=off
+		elif [ "$ok" -eq "$n" ]; then s=on
+		else s=partial
+		fi
 	fi
-	units=$(link_units); n=${units% *}; ok=${units#* }
-	if [ -n "$y_text" ]; then
-		n=$((n + 1))
-		text_present && ok=$((ok + 1))
-	fi
-	if [ "$n" -eq 0 ] || [ "$ok" -eq 0 ]; then echo off
-	elif [ "$ok" -eq "$n" ]; then echo on
-	else echo partial
-	fi
+	if [ -n "$missing" ] && [ "$s" = off ]; then s=na; fi
+	echo "$s"
 }
 
 is_module() { [ -f "$SETUPD/$1.yml" ]; }

@@ -54,7 +54,7 @@ rcfiles-setup uninstall screen vim  # 指定した機能をアンインストー
 | `tmux` | `~/.tmux.conf`、`.mytmux`、`.mytmux2`、`.mytmux3`、`.tmuxssh` をリンクする |
 | `screen` | `~/.screenrc`、`.myscreen`、`.myscreen2` をリンクする |
 | `launcher` | `~/.mylauncher` をリンクする |
-| `awsp` | `shell_functions/aws_profile_switcher.zsh` を読み込む行を `~/.zshrc` の最後に追加する（標準では入れない） |
+| `awsp` | `shell_functions/aws_profile_switcher.zsh` を読み込む行を `~/.zshrc` の最後に追加する（`aws` コマンドがあるときだけ。標準では入れない） |
 | `prompt-2line` | 2行のプロンプト（`.zshrc.bash_prompt` と `.zshrc.2line_prompt_1`）を読み込む行を `~/.zshrc` の最後に追加する（標準では入れない） |
 | `pinentry-notify` | `~/.gnupg/pinentry-notify.py` をリンクする（`~/.gnupg` があるときだけ） |
 | `kbd-off` | `kbd-off/install.sh` で常駐させる。アンインストールで常駐を止める（macOS のみ。標準では入れない） |
