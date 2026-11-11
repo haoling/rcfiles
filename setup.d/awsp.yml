@@ -1,7 +1,7 @@
 description: AWS_PROFILE の切り替え関数（awsp）を ~/.zshrc の最後で読み込む
 
-# aws コマンドがある環境だけ
-requires_command: aws
+# ~/.aws がある環境だけ
+requires_dir: .aws
 
 file: .zshrc
 where: bottom
