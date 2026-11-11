@@ -9,7 +9,58 @@ git clone https://github.com/haoling/rcfiles.git ~/.rcfiles
 sh ~/.rcfiles/ln_rcfiles.sh
 ```
 
-`ln_rcfiles.sh` は何度実行しても大丈夫です。
+`ln_rcfiles.sh` は標準の機能（zsh・git・vim・tmux・screen・launcher・pinentry-notify）をまとめてインストールします。何度実行しても大丈夫です。
+
+## 機能を選んでインストール・アンインストールする
+
+`rcfiles-setup` を実行すると、機能の一覧が出ます。今の状態を見ながら、入れるもの・外すものを選べます。
+（zsh の設定を読み込んだあとは `rcfiles-setup` だけで動きます）
+
+```sh
+sh ~/.rcfiles/rcfiles-setup
+```
+
+```
+ rcfiles の機能を選んでください
+
+   1 [x] zsh               インストール済み
+   2 [x] git               インストール済み
+ - 3 [ ] vim               インストール済み
+   4 [x] tmux              インストール済み
+   ...
+ + 7 [x] awsp              未インストール
+   9     kbd-off           この環境では使えません
+```
+
+- **↑↓**（または `j` `k`）で移動、**Space** か数字キーで切り替え、**Enter** で決定します
+- `+` の付いた機能をインストールし、`-` の付いた機能をアンインストールします。決定のあと、変更の一覧を出して確認します
+- `a` で全部選ぶ、`n` で全部外す、`r` で今の状態に戻す、`q` か Escape で何もせずに終わります
+
+画面を使わずに、コマンドで指定することもできます。
+
+```sh
+rcfiles-setup list                  # 各機能の状態を表示
+rcfiles-setup install awsp          # 指定した機能をインストール
+rcfiles-setup uninstall screen vim  # 指定した機能をアンインストール
+```
+
+| 機能 | 内容 |
+|---|---|
+| `zshrc` | `~/.zshrc` の先頭で `.zshrc_rcfiles` を読み込む |
+| `gitconfig` | `~/.gitconfig` の先頭で `.gitconfig_rcfiles` を `[include]` する |
+| `vim` | `~/.vimrc` をリンクする |
+| `tmux` | `~/.tmux.conf`、`.mytmux`、`.mytmux2`、`.mytmux3`、`.tmuxssh` をリンクする |
+| `screen` | `~/.screenrc`、`.myscreen`、`.myscreen2` をリンクする |
+| `launcher` | `~/.mylauncher` をリンクする |
+| `awsp` | `shell_functions/aws_profile_switcher.zsh` を読み込む行を `~/.zshrc` の最後に追加する（標準では入れない） |
+| `pinentry` | `~/.gnupg/pinentry-notify.py` をリンクする（`~/.gnupg` があるときだけ） |
+| `kbdoff` | `kbd-off/install.sh` で常駐させる。アンインストールで常駐を止める（macOS のみ。標準では入れない） |
+
+アンインストールで消すのは、rcfiles が作ったリンクと、rcfiles が追加した行だけです。
+
+- インストールのとき、ホームに同じ名前の実体ファイルがあれば `<ファイル名>.rcfiles-bak` に退避します。アンインストールすると、退避したファイルを元に戻します
+- 手で書いた読み込みの行や、rcfiles のものではないファイルは消さずに、残っていることを知らせます
+- pinentry-notify をアンインストールしても、`gpg-agent.conf` は書き換えません。表示される案内に沿って戻してください
 
 ## 仕組み
 
@@ -19,7 +70,7 @@ sh ~/.rcfiles/ln_rcfiles.sh
 
 `.vimrc`、`.tmux.conf`、`.screenrc` など、他のツールが書き換えないファイルです。
 `ln_rcfiles.sh` が `~/.vimrc -> .rcfiles/.vimrc` のようにリンクを作ります。
-ホームに同じ名前のファイルがあると、削除してリンクに置き換えるので注意してください。
+ホームに同じ名前のファイルがあると、`<ファイル名>.rcfiles-bak` に退避してからリンクに置き換えます。
 
 ### 実体ファイルから読み込むもの
 
@@ -166,4 +217,5 @@ printf 'OPTION owner=%d/%d %s\nGETINFO version\nBYE\n' $$ $(id -u) $(hostname) \
 | `shell_functions/fzf-install-guide` | fzf を現在のユーザーに入れる手順を、環境に合わせて表示するスクリプト。fzf がないときは `awsp` や `kubep` からも呼ばれる |
 | `shell_functions/middle`, `middle.php` | ファイルの指定行の前後を表示する `middle` コマンド |
 | `gnupg/pinentry-notify.py` | GPG 鍵の使用前に要求元を表示して確認する pinentry の中継スクリプト（macOS） |
-| `ln_rcfiles.sh` | セットアップ用のスクリプト |
+| `rcfiles-setup` | 機能を選んでインストール・アンインストールするスクリプト |
+| `ln_rcfiles.sh` | 標準の機能をまとめてインストールするスクリプト（`rcfiles-setup defaults` を実行） |

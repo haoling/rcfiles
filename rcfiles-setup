@@ -1,0 +1,468 @@
+#!/bin/sh
+# rcfiles の機能を選んで、インストール・アンインストールする
+#
+#   rcfiles-setup                     画面で選ぶ（↑↓ で移動、Space で切り替え、Enter で決定）
+#   rcfiles-setup list                各機能の状態を表示する
+#   rcfiles-setup install <機能>...   指定した機能をインストールする
+#   rcfiles-setup uninstall <機能>... 指定した機能をアンインストールする
+#   rcfiles-setup defaults            標準の機能をインストールする（ln_rcfiles.sh から呼ばれる）
+#
+# 何度実行しても大丈夫です。POSIX sh で書いているので、macOS でも Linux でも動きます。
+
+RCDIR=$(cd "$(dirname "$0")" && pwd)
+cd "$HOME" || exit 1
+
+# ホームに置くリンクの指し先。~/.rcfiles にあるときは、これまでと同じ相対パスにする
+if [ "$RCDIR" = "$HOME/.rcfiles" ]; then
+	LINK_BASE=.rcfiles
+else
+	LINK_BASE=$RCDIR
+fi
+
+MODULES="zshrc gitconfig vim tmux screen launcher awsp pinentry kbdoff"
+DEFAULTS="zshrc gitconfig vim tmux screen launcher pinentry"
+
+ZSHRC_LOADER='[ -f ~/.rcfiles/.zshrc_rcfiles ] && source ~/.rcfiles/.zshrc_rcfiles'
+GITCONFIG_PATH_LINE='	path = ~/.rcfiles/.gitconfig_rcfiles'
+AWSP_LINE='[ -f ~/.rcfiles/shell_functions/aws_profile_switcher.zsh ] && source ~/.rcfiles/shell_functions/aws_profile_switcher.zsh'
+
+if [ -t 1 ]; then
+	C_ON=$(printf '\033[32m'); C_PART=$(printf '\033[33m'); C_DIM=$(printf '\033[2m')
+	C_BOLD=$(printf '\033[1m'); C_REV=$(printf '\033[7m'); C_RST=$(printf '\033[0m')
+else
+	C_ON=; C_PART=; C_DIM=; C_BOLD=; C_REV=; C_RST=
+fi
+
+msg() { printf '  %s\n' "$*"; }
+warn() { printf '  %s! %s%s\n' "$C_PART" "$*" "$C_RST"; }
+
+# ---------------------------------------------------------------------------
+# 共通の処理
+
+# usage: link_state <置き場所> <リポジトリ内のパス>
+# 0: rcfiles へのリンクになっている / 1: なっていない
+link_state() {
+	[ -L "$1" ] || return 1
+	case "$(readlink "$1")" in
+		*.rcfiles/"$2" | "$RCDIR/$2") return 0 ;;
+	esac
+	return 1
+}
+
+# usage: link_install <置き場所> <リンクの指し先> <リポジトリ内のパス>
+# 同じ名前の実体ファイルがあれば <置き場所>.rcfiles-bak に退避する
+link_install() {
+	if link_state "$1" "$3" && [ "$(readlink "$1")" = "$2" ]; then
+		return 0
+	elif [ -L "$1" ]; then
+		rm "$1"
+	elif [ -e "$1" ]; then
+		bak=$1.rcfiles-bak
+		[ -e "$bak" ] && bak=$1.rcfiles-bak.$(date +%Y%m%d%H%M%S)
+		mv "$1" "$bak" && msg "既存の ~/$1 を ~/$bak に退避しました"
+	fi
+	ln -s "$2" "$1" && msg "リンク: ~/$1 -> $2"
+}
+
+# usage: link_uninstall <置き場所> <リポジトリ内のパス>
+# rcfiles へのリンクだけを消す。退避したファイルがあれば戻す
+link_uninstall() {
+	if link_state "$1" "$2"; then
+		rm "$1" && msg "削除: ~/$1"
+		if [ -e "$1.rcfiles-bak" ] && [ ! -e "$1" ]; then
+			mv "$1.rcfiles-bak" "$1" && msg "退避していた ~/$1.rcfiles-bak を戻しました"
+		fi
+	elif [ -e "$1" ] || [ -L "$1" ]; then
+		warn "~/$1 は rcfiles のリンクではないので、そのままにします"
+	fi
+}
+
+# usage: links_status <パス>...（ホーム直下にリンクするファイル）
+links_status() {
+	n=0; ok=0
+	for f in "$@"; do
+		n=$((n + 1))
+		link_state "$f" "$f" && ok=$((ok + 1))
+	done
+	if [ $ok -eq $n ]; then echo on
+	elif [ $ok -eq 0 ]; then echo off
+	else echo partial
+	fi
+}
+links_install() { for f in "$@"; do link_install "$f" "$LINK_BASE/$f" "$f"; done; }
+links_uninstall() { for f in "$@"; do link_uninstall "$f" "$f"; done; }
+
+# usage: write_file <ファイル> < 新しい内容
+# 権限やリンク元を変えないように、上書きで書き戻す
+write_file() {
+	tmp=$1.rcfiles-tmp.$$
+	cat > "$tmp" && cat "$tmp" > "$1"
+	rm -f "$tmp"
+}
+
+# usage: prepend_loader <ファイル> <目印> <先頭に入れる内容>
+prepend_loader() {
+	if [ -L "$1" ]; then rm "$1"; fi
+	if ! grep -qsF "$2" "$1"; then
+		{
+			printf '%s\n' "$3"
+			if [ -f "$1" ]; then cat "$1"; fi
+		} > "$1.tmp" && mv "$1.tmp" "$1" && msg "~/$1 の先頭に読み込みを追加しました"
+	fi
+}
+
+# usage: remove_line <ファイル> <行>（完全に一致する行を消す）
+remove_line() {
+	[ -f "$1" ] || return 0
+	if grep -qxF "$2" "$1"; then
+		grep -vxF "$2" "$1" | write_file "$1"
+		msg "~/$1 から削除: $2"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# 機能の定義
+#   m_<名前>_title / _desc / _status (on|off|partial|na) / _install / _uninstall
+
+m_zshrc_title() { echo "zsh"; }
+m_zshrc_desc() { echo "~/.zshrc の先頭で .zshrc_rcfiles を読み込む"; }
+m_zshrc_status() { grep -qsF '.rcfiles/.zshrc_rcfiles' .zshrc && echo on || echo off; }
+m_zshrc_install() { prepend_loader .zshrc '.rcfiles/.zshrc_rcfiles' "$ZSHRC_LOADER"; }
+m_zshrc_uninstall() {
+	remove_line .zshrc "$ZSHRC_LOADER"
+	if grep -qsF '.rcfiles/.zshrc_rcfiles' .zshrc; then
+		warn "~/.zshrc に .zshrc_rcfiles を読み込む行が残っています。手で消してください"
+	fi
+}
+
+m_gitconfig_title() { echo "git"; }
+m_gitconfig_desc() { echo "~/.gitconfig の先頭で .gitconfig_rcfiles を [include] する"; }
+m_gitconfig_status() { grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig && echo on || echo off; }
+m_gitconfig_install() {
+	prepend_loader .gitconfig '.rcfiles/.gitconfig_rcfiles' "$(printf '[include]\n%s' "$GITCONFIG_PATH_LINE")"
+}
+m_gitconfig_uninstall() {
+	[ -f .gitconfig ] || return 0
+	grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig || return 0
+	# path の行を消し、それで空になった [include] も消す
+	awk '
+		{ line[NR] = $0 }
+		END {
+			for (i = 1; i <= NR; i++)
+				if (line[i] ~ /^[ \t]*path[ \t]*=[ \t]*~\/\.rcfiles\/\.gitconfig_rcfiles[ \t]*$/) drop[i] = 1
+			for (i = 1; i <= NR; i++) {
+				if (line[i] !~ /^[ \t]*\[include\][ \t]*$/) continue
+				had = 0; empty = 1
+				for (j = i + 1; j <= NR; j++) {
+					if (drop[j]) { had = 1; continue }
+					if (line[j] ~ /^[ \t]*([#;].*)?$/) continue
+					if (line[j] ~ /^[ \t]*\[/) break
+					empty = 0; break
+				}
+				if (had && empty) drop[i] = 1
+			}
+			for (i = 1; i <= NR; i++) if (!drop[i]) print line[i]
+		}' .gitconfig | write_file .gitconfig
+	msg "~/.gitconfig から .gitconfig_rcfiles の [include] を削除しました"
+	if grep -qsF '.rcfiles/.gitconfig_rcfiles' .gitconfig; then
+		warn "~/.gitconfig に .gitconfig_rcfiles を読み込む行が残っています。手で消してください"
+	fi
+}
+
+VIM_FILES=".vimrc"
+m_vim_title() { echo "vim"; }
+m_vim_desc() { echo "~/.vimrc をリンクする"; }
+m_vim_status() { links_status $VIM_FILES; }
+m_vim_install() { links_install $VIM_FILES; }
+m_vim_uninstall() { links_uninstall $VIM_FILES; }
+
+TMUX_FILES=".tmux.conf .mytmux .mytmux2 .mytmux3 .tmuxssh"
+m_tmux_title() { echo "tmux"; }
+m_tmux_desc() { echo "~/.tmux.conf と .mytmux / .mytmux2 / .mytmux3 / .tmuxssh をリンクする"; }
+m_tmux_status() { links_status $TMUX_FILES; }
+m_tmux_install() { links_install $TMUX_FILES; }
+m_tmux_uninstall() { links_uninstall $TMUX_FILES; }
+
+SCREEN_FILES=".screenrc .myscreen .myscreen2"
+m_screen_title() { echo "screen"; }
+m_screen_desc() { echo "~/.screenrc と .myscreen / .myscreen2 をリンクする"; }
+m_screen_status() { links_status $SCREEN_FILES; }
+m_screen_install() { links_install $SCREEN_FILES; }
+m_screen_uninstall() { links_uninstall $SCREEN_FILES; }
+
+LAUNCHER_FILES=".mylauncher"
+m_launcher_title() { echo "launcher"; }
+m_launcher_desc() { echo "~/.mylauncher をリンクする（~/.mylaunchers のコマンドを選んで実行）"; }
+m_launcher_status() { links_status $LAUNCHER_FILES; }
+m_launcher_install() { links_install $LAUNCHER_FILES; }
+m_launcher_uninstall() { links_uninstall $LAUNCHER_FILES; }
+
+m_awsp_title() { echo "awsp"; }
+m_awsp_desc() { echo "AWS_PROFILE の切り替え関数を ~/.zshrc の最後で読み込む"; }
+m_awsp_status() { grep -qsxF "$AWSP_LINE" .zshrc && echo on || echo off; }
+m_awsp_install() {
+	grep -qsxF "$AWSP_LINE" .zshrc && return 0
+	if grep -qsF 'aws_profile_switcher.zsh' .zshrc; then
+		warn "~/.zshrc には aws_profile_switcher.zsh を読み込む行がすでにあります"
+	fi
+	printf '%s\n' "$AWSP_LINE" >> .zshrc && msg "~/.zshrc の最後に追加: $AWSP_LINE"
+}
+m_awsp_uninstall() {
+	remove_line .zshrc "$AWSP_LINE"
+	if grep -qsF 'aws_profile_switcher.zsh' .zshrc; then
+		warn "~/.zshrc に aws_profile_switcher.zsh を読み込む行が残っています。手で消してください"
+	fi
+}
+
+m_pinentry_title() { echo "pinentry-notify"; }
+m_pinentry_desc() { echo "GPG 鍵の使用前に要求元を確認する（~/.gnupg/pinentry-notify.py、macOS）"; }
+m_pinentry_status() {
+	[ -d .gnupg ] || { echo na; return; }
+	link_state .gnupg/pinentry-notify.py gnupg/pinentry-notify.py && echo on || echo off
+}
+m_pinentry_install() {
+	if [ "$LINK_BASE" = .rcfiles ]; then t=../.rcfiles/gnupg/pinentry-notify.py; else t=$RCDIR/gnupg/pinentry-notify.py; fi
+	link_install .gnupg/pinentry-notify.py "$t" gnupg/pinentry-notify.py
+	if ! grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
+		msg "使うには ~/.gnupg/gpg-agent.conf の pinentry-program を次のようにしてください:"
+		msg "  pinentry-program $HOME/.gnupg/pinentry-notify.py"
+	fi
+}
+m_pinentry_uninstall() {
+	link_uninstall .gnupg/pinentry-notify.py gnupg/pinentry-notify.py
+	if grep -qs 'pinentry-notify.py' .gnupg/gpg-agent.conf; then
+		warn "~/.gnupg/gpg-agent.conf の pinentry-program が pinentry-notify.py のままです。"
+		warn "元の pinentry に戻して gpgconf --kill gpg-agent を実行してください"
+	fi
+}
+
+KBDOFF_LABEL=jp.fei-yen.kbd-off
+KBDOFF_PLIST=Library/LaunchAgents/$KBDOFF_LABEL.plist
+m_kbdoff_title() { echo "kbd-off"; }
+m_kbdoff_desc() { echo "外付けキーボード接続中は内蔵キーボードを無効にする（macOS、要 swiftc）"; }
+m_kbdoff_status() {
+	[ "$(uname -s)" = Darwin ] || { echo na; return; }
+	[ -f "$KBDOFF_PLIST" ] && echo on || echo off
+}
+m_kbdoff_install() { zsh "$RCDIR/kbd-off/install.sh"; }
+m_kbdoff_uninstall() {
+	launchctl bootout "gui/$(id -u)/$KBDOFF_LABEL" 2>/dev/null
+	rm -f "$KBDOFF_PLIST" && msg "削除: ~/$KBDOFF_PLIST"
+	zsh "$RCDIR/kbd-off/on.sh"
+	msg "システム設定の「入力監視」から kbd-off-agent を削除しておくと安心です"
+}
+
+# ---------------------------------------------------------------------------
+
+m() { eval "m_$1_$2"; }
+
+is_module() {
+	for x in $MODULES; do [ "$x" = "$1" ] && return 0; done
+	return 1
+}
+
+state_label() {
+	case $1 in
+		on) printf '%sインストール済み%s' "$C_ON" "$C_RST" ;;
+		partial) printf '%s一部だけ%s' "$C_PART" "$C_RST" ;;
+		off) printf '未インストール' ;;
+		na) printf '%sこの環境では使えません%s' "$C_DIM" "$C_RST" ;;
+	esac
+}
+
+do_install() {
+	printf '%s[インストール] %s%s\n' "$C_BOLD" "$(m "$1" title)" "$C_RST"
+	m "$1" install
+}
+do_uninstall() {
+	printf '%s[アンインストール] %s%s\n' "$C_BOLD" "$(m "$1" title)" "$C_RST"
+	m "$1" uninstall
+}
+
+cmd_list() {
+	for id in $MODULES; do
+		printf '  %-10s %-16s %s\n' "$id" "$(m $id title)" "$(state_label "$(m $id status)")"
+		printf '  %-10s %s%s%s\n' "" "$C_DIM" "$(m $id desc)" "$C_RST"
+	done
+}
+
+# usage: cmd_apply install|uninstall <機能>...
+cmd_apply() {
+	action=$1; shift
+	[ $# -gt 0 ] || { echo "機能の名前を指定してください（rcfiles-setup list で一覧）" >&2; return 1; }
+	for id in "$@"; do
+		is_module "$id" || { echo "そのような機能はありません: $id（rcfiles-setup list で一覧）" >&2; return 1; }
+	done
+	for id in "$@"; do
+		if [ "$(m "$id" status)" = na ]; then
+			warn "$(m "$id" title) はこの環境では使えないので、飛ばします"
+			continue
+		fi
+		"do_$action" "$id"
+	done
+}
+
+cmd_defaults() {
+	for id in $DEFAULTS; do
+		[ "$(m "$id" status)" = na ] && continue
+		do_install "$id"
+	done
+}
+
+# ---------------------------------------------------------------------------
+# 画面で選ぶ
+
+TTY_SAVED=
+restore_tty() {
+	[ -n "$TTY_SAVED" ] && stty "$TTY_SAVED" </dev/tty
+	TTY_SAVED=
+	printf '\033[?25h' >/dev/tty
+}
+
+# 1 キー読んで KEY に入れる: up down space enter quit all none か、その文字
+read_key() {
+	c=$(dd bs=1 count=1 2>/dev/null </dev/tty)
+	case $c in
+		"$(printf '\033')")
+			stty min 0 time 1 </dev/tty
+			rest=$(dd bs=1 count=2 2>/dev/null </dev/tty)
+			stty min 1 time 0 </dev/tty
+			case $rest in
+				'[A' | OA) KEY=up ;;
+				'[B' | OB) KEY=down ;;
+				'') KEY=quit ;;
+				*) KEY= ;;
+			esac ;;
+		'') KEY=enter ;;
+		' ') KEY=space ;;
+		k) KEY=up ;;
+		j) KEY=down ;;
+		q | Q) KEY=quit ;;
+		*) KEY=$c ;;
+	esac
+}
+
+draw_menu() {
+	printf '\033[H\033[2J'
+	printf '%srcfiles の機能を選んでください%s  %s(%s)%s\n\n' "$C_BOLD" "$C_RST" "$C_DIM" "$RCDIR" "$C_RST"
+	i=0
+	for id in $MODULES; do
+		i=$((i + 1))
+		eval "st=\$st_$id sel=\$sel_$id"
+		if [ "$st" = na ]; then box='   '
+		elif [ "$sel" = 1 ]; then box='[x]'
+		else box='[ ]'
+		fi
+		# 変わるところに印を付ける
+		mark=' '
+		if [ "$st" != na ]; then
+			if [ "$sel" = 1 ] && [ "$st" != on ]; then mark="${C_ON}+${C_RST}"
+			elif [ "$sel" = 0 ] && [ "$st" != off ]; then mark="${C_PART}-${C_RST}"
+			fi
+		fi
+		line=$(printf '%d %s %-16s' "$i" "$box" "$(m $id title)")
+		if [ $i -eq "$cur" ]; then
+			printf ' %s %s%s%s  %s\n' "$mark" "$C_REV" "$line" "$C_RST" "$(state_label "$st")"
+		else
+			printf ' %s %s  %s\n' "$mark" "$line" "$(state_label "$st")"
+		fi
+		[ $i -eq "$cur" ] && desc=$(m $id desc)
+	done
+	printf '\n  %s%s%s\n\n' "$C_DIM" "$desc" "$C_RST"
+	printf '  ↑↓/jk: 移動  Space/数字: 切り替え  a: 全部選ぶ  n: 全部外す  r: 元に戻す\n'
+	printf '  Enter: 決定  q: やめる\n'
+	printf '  %s+%s インストールする  %s-%s アンインストールする\n' "$C_ON" "$C_RST" "$C_PART" "$C_RST"
+}
+
+toggle() {
+	id=$(echo $MODULES | cut -d' ' -f"$1")
+	eval "st=\$st_$id sel=\$sel_$id"
+	[ "$st" = na ] && return
+	if [ "$sel" = 1 ]; then eval "sel_$id=0"; else eval "sel_$id=1"; fi
+}
+
+cmd_interactive() {
+	if [ ! -t 0 ] || [ ! -t 1 ]; then
+		echo "端末から実行してください。スクリプトから使うときは install / uninstall を指定します" >&2
+		usage >&2
+		return 1
+	fi
+	total=0
+	for id in $MODULES; do
+		total=$((total + 1))
+		st=$(m $id status)
+		eval "st_$id=\$st"
+		case $st in on | partial) eval "sel_$id=1" ;; *) eval "sel_$id=0" ;; esac
+	done
+	cur=1
+
+	TTY_SAVED=$(stty -g </dev/tty)
+	trap 'restore_tty' EXIT
+	trap 'restore_tty; exit 130' INT TERM
+	stty -icanon -echo min 1 time 0 </dev/tty
+	printf '\033[?25l'
+
+	while :; do
+		draw_menu
+		read_key
+		case $KEY in
+			up) cur=$((cur - 1)); [ $cur -lt 1 ] && cur=$total ;;
+			down) cur=$((cur + 1)); [ $cur -gt $total ] && cur=1 ;;
+			space) toggle $cur ;;
+			[1-9]) [ "$KEY" -le $total ] && { cur=$KEY; toggle $cur; } ;;
+			a) for id in $MODULES; do eval "[ \"\$st_$id\" = na ] || sel_$id=1"; done ;;
+			n) for id in $MODULES; do eval "sel_$id=0"; done ;;
+			r) for id in $MODULES; do eval "case \$st_$id in on|partial) sel_$id=1;; *) sel_$id=0;; esac"; done ;;
+			enter) break ;;
+			quit) restore_tty; printf '\033[H\033[2J'; echo "何もしませんでした"; return 0 ;;
+		esac
+	done
+	restore_tty
+	printf '\033[H\033[2J'
+
+	to_install=; to_uninstall=
+	for id in $MODULES; do
+		eval "st=\$st_$id sel=\$sel_$id"
+		[ "$st" = na ] && continue
+		if [ "$sel" = 1 ] && [ "$st" != on ]; then to_install="$to_install $id"
+		elif [ "$sel" = 0 ] && [ "$st" != off ]; then to_uninstall="$to_uninstall $id"
+		fi
+	done
+	if [ -z "$to_install$to_uninstall" ]; then
+		echo "変更はありません"
+		return 0
+	fi
+
+	echo "次の変更をします:"
+	for id in $to_install; do printf '  %s+ インストール%s     %s\n' "$C_ON" "$C_RST" "$(m $id title)"; done
+	for id in $to_uninstall; do printf '  %s- アンインストール%s %s\n' "$C_PART" "$C_RST" "$(m $id title)"; done
+	printf '\nよろしいですか? [y/N] '
+	read -r ans </dev/tty
+	case $ans in y | Y | yes) ;; *) echo "やめました"; return 0 ;; esac
+	echo
+	for id in $to_uninstall; do do_uninstall "$id"; done
+	for id in $to_install; do do_install "$id"; done
+	echo
+	echo "完了しました。zsh の設定を変えたときは、新しいシェルを開くと反映されます"
+}
+
+usage() {
+	cat <<'EOF'
+使い方:
+  rcfiles-setup                     画面で選んでインストール・アンインストールする
+  rcfiles-setup list                各機能の状態を表示する
+  rcfiles-setup install <機能>...   指定した機能をインストールする
+  rcfiles-setup uninstall <機能>... 指定した機能をアンインストールする
+  rcfiles-setup defaults            標準の機能をまとめてインストールする
+EOF
+}
+
+case $1 in
+	'') cmd_interactive ;;
+	list | ls | -l | --list) cmd_list ;;
+	install | -i | --install) shift; cmd_apply install "$@" ;;
+	uninstall | remove | -u | --uninstall) shift; cmd_apply uninstall "$@" ;;
+	defaults | --defaults) cmd_defaults ;;
+	help | -h | --help) usage ;;
+	*) echo "不明なコマンドです: $1" >&2; usage >&2; exit 1 ;;
+esac

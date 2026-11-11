@@ -141,6 +141,9 @@
 # 8ビット文字をそのまま表示する
   setopt PRINT_EIGHT_BIT
 
+# rcfiles の機能を選んでインストール・アンインストールする
+alias rcfiles-setup='sh ~/.rcfiles/rcfiles-setup'
+
 # kubep
 source ~/.rcfiles/shell_functions/kube_context_switcher.zsh
 
