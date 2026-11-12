@@ -223,9 +223,13 @@ def pump_pinentry_to_agent(src):
 
 
 def main():
+    # launchd から起動された gpg-agent では PATH に /opt/homebrew/bin が無く、
+    # pinentry-touchid がフォールバック先の pinentry-mac を見つけられないため足す
+    env = dict(os.environ)
+    env["PATH"] = "/opt/homebrew/bin:" + env.get("PATH", "/usr/bin:/bin")
     child = subprocess.Popen(
         [REAL_PINENTRY] + sys.argv[1:],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env,
     )
     t_in = threading.Thread(
         target=pump_agent_to_pinentry, args=(sys.stdin.buffer, child.stdin), daemon=True)
