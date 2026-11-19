@@ -1,0 +1,29 @@
+description: ~/.ssh/authorized_keys に SSH CA（ssh-ca-user-ca）を信頼する行を足す（principal は haoling）
+
+# link や text では ~/.ssh の作成と権限（700 / 600）を整えられないので、シェルで書く
+status: |
+  if grep -qsF 'AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGtX1kOZ5dNUKvkzWz0SZv6GUX0KflCeMCJUJb0OxgxaZt7mQT2WGwNMC80MNUnUYuYGa8fMRkjdEFjuZJwO9Y8=' .ssh/authorized_keys; then echo on; else echo off; fi
+
+install: |
+  ca_blob='AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGtX1kOZ5dNUKvkzWz0SZv6GUX0KflCeMCJUJb0OxgxaZt7mQT2WGwNMC80MNUnUYuYGa8fMRkjdEFjuZJwO9Y8='
+  ca_line='cert-authority,principals="haoling" ecdsa-sha2-nistp256 '$ca_blob' ssh-ca-user-ca'
+  if grep -qsF "$ca_blob" .ssh/authorized_keys; then
+    msg "~/.ssh/authorized_keys には追加済みです"
+  else
+    [ -d .ssh ] || mkdir -p .ssh
+    chmod 700 .ssh
+    # 末尾が改行で終わっていなければ足してから追加する
+    if [ -s .ssh/authorized_keys ] && [ -n "$(tail -c 1 .ssh/authorized_keys)" ]; then printf '\n' >> .ssh/authorized_keys; fi
+    printf '%s\n' "$ca_line" >> .ssh/authorized_keys && msg "~/.ssh/authorized_keys の最後に追加しました"
+    chmod 600 .ssh/authorized_keys
+  fi
+
+uninstall: |
+  ca_blob='AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBGtX1kOZ5dNUKvkzWz0SZv6GUX0KflCeMCJUJb0OxgxaZt7mQT2WGwNMC80MNUnUYuYGa8fMRkjdEFjuZJwO9Y8='
+  if grep -qsF "$ca_blob" .ssh/authorized_keys; then
+    tmp=.ssh/authorized_keys.rcfiles-tmp.$$
+    grep -vF "$ca_blob" .ssh/authorized_keys > "$tmp"
+    cat "$tmp" > .ssh/authorized_keys
+    rm -f "$tmp"
+    msg "~/.ssh/authorized_keys から削除しました"
+  fi
