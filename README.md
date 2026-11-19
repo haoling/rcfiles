@@ -50,6 +50,7 @@ rcfiles-setup uninstall screen vim  # 指定した機能をアンインストー
 |---|---|
 | `zsh` | `~/.zshrc` の先頭で `.zshrc_rcfiles` を読み込む |
 | `git` | `~/.gitconfig` の先頭で `.gitconfig_rcfiles` を `[include]` する |
+| `git-ssh-ca` | `~/.gitconfig` の最後に、`git@github.com:` と `ssh://git@github.com/` を `github@ssh-ca-keyswapper.lo.fei-yen.jp:` に置き換える `[url]`（`insteadOf`）を追加する（標準では入れない） |
 | `vim` | `~/.vimrc` をリンクする |
 | `tmux` | `~/.tmux.conf`、`.mytmux`、`.mytmux2`、`.mytmux3`、`.tmuxssh` をリンクする |
 | `screen` | `~/.screenrc`、`.myscreen`、`.myscreen2` をリンクする |
