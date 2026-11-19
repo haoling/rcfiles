@@ -1,0 +1,9 @@
+description: ~/.gitconfig の最後に、github.com への SSH を ssh-ca-keyswapper 経由にする insteadOf を足す（標準では入れない）
+
+# git コマンドがある環境だけ
+requires_command: git
+
+file: .gitconfig
+where: bottom
+marker: '[url "github@ssh-ca-keyswapper.lo.fei-yen.jp:"]'
+text: "[url \"github@ssh-ca-keyswapper.lo.fei-yen.jp:\"]\n\tinsteadOf = git@github.com:\n\tinsteadOf = ssh://git@github.com/"
