@@ -56,6 +56,7 @@ rcfiles-setup uninstall screen vim  # 指定した機能をアンインストー
 | `screen` | `~/.screenrc`、`.myscreen`、`.myscreen2` をリンクする |
 | `launcher` | `~/.mylauncher` をリンクする |
 | `awsp` | `shell_functions/aws_profile_switcher.zsh` を読み込む行を `~/.zshrc` の最後に追加する（`~/.aws` があるときだけ。標準では入れない） |
+| `awsl` | `shell_functions/awsl.zsh` を読み込む行を `~/.zshrc` の最後に追加する（macOS で `aws` コマンドがあるときだけ。標準では入れない） |
 | `prompt-2line` | 2行のプロンプト（`.zshrc.bash_prompt` と `.zshrc.2line_prompt_1`）を読み込む行を `~/.zshrc` の最後に追加する（標準では入れない） |
 | `pinentry-notify` | `~/.gnupg/pinentry-notify.py` をリンクする（`~/.gnupg` があるときだけ） |
 | `kbd-off` | `kbd-off/install.sh` で常駐させる。アンインストールで常駐を止める（macOS のみ。標準では入れない） |
@@ -230,8 +231,11 @@ printf 'OPTION owner=%d/%d %s\nGETINFO version\nBYE\n' $$ $(id -u) $(hostname) \
 | `.mylauncher` | `~/.mylaunchers` に置いたコマンドを選んで実行するランチャー |
 | `.myfunc` | 上のスクリプトが使う bash の関数 |
 | `shell_functions/aws_profile_switcher.zsh` | `AWS_PROFILE` を選んで切り替える関数（`awsp` など）。fzf があれば fzf で選べる。`awsp new` でプロファイルの新規作成、`awsp help` で使い方を表示。`~/.zshrc` から `source` して使う |
+| `shell_functions/awsl.zsh` | `aws login` を、選んでおいた Chrome のプロファイルで開く関数（`awsl`）。最初に `awsl choice` で fzf からプロファイルを選ぶ（保存先は `~/.config/awsl/chrome-profile`。リポジトリには入らない）。`AWS_PROFILE` が未設定なら先に `awsp` を実行するよう案内する（`--profile` を渡したときは除く）。`awsl help` で使い方を表示。`~/.zshrc` から `source` して使う（macOS） |
+| `shell_functions/awsl-browser` | `awsl` が `BROWSER` に指定するスクリプト。保存したプロファイルで Chrome に URL を開かせる |
+| `shell_functions/awsl-list-chrome-profiles` | Chrome のプロファイルを「ディレクトリ名と表示名」だけ一覧にするスクリプト（`awsl choice` が使う） |
 | `shell_functions/kube_context_switcher.zsh` | kubectl の context を選んで切り替える関数（`kubep` など）。fzf があれば fzf で選べる。`kubep help` で使い方を表示。`~/.zshrc` から `source` して使う |
-| `shell_functions/fzf-install-guide` | fzf を現在のユーザーに入れる手順を、環境に合わせて表示するスクリプト。fzf がないときは `awsp` や `kubep` からも呼ばれる |
+| `shell_functions/fzf-install-guide` | fzf を現在のユーザーに入れる手順を、環境に合わせて表示するスクリプト。fzf がないときは `awsp`、`kubep`、`awsl choice` からも呼ばれる |
 | `shell_functions/middle`, `middle.php` | ファイルの指定行の前後を表示する `middle` コマンド |
 | `gnupg/pinentry-notify.py` | GPG 鍵の使用前に要求元を表示して確認する pinentry の中継スクリプト（macOS） |
 | `rcfiles-setup` | 機能を選んでインストール・アンインストールするスクリプト |
