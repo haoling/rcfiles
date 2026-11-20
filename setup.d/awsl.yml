@@ -1,0 +1,10 @@
+description: aws login を選んだ Chrome プロファイルで開く関数（awsl）を ~/.zshrc の最後で読み込む
+
+# macOS の Chrome を使うため
+os: darwin
+requires_command: aws
+
+file: .zshrc
+where: bottom
+marker: shell_functions/awsl.zsh
+text: '[ -f ~/.rcfiles/shell_functions/awsl.zsh ] && source ~/.rcfiles/shell_functions/awsl.zsh'

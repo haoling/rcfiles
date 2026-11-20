@@ -1,0 +1,8 @@
+#!/bin/sh
+# aws login 用: ~/.config/awsl/chrome-profile に保存された Chrome プロファイルで URL を開く
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/awsl/chrome-profile"
+if [ ! -s "$conf" ]; then
+  echo "awsl-browser: Chrome プロファイルが未設定です。'awsl choice' を実行してください。" >&2
+  exit 1
+fi
+exec open -na "Google Chrome" --args --profile-directory="$(head -n1 "$conf")" "$@"

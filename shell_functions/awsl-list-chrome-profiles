@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+# Chrome のプロファイル一覧を「ディレクトリ名<TAB>表示名」で出力する（名前以外の情報は出さない）
+import json, os
+p = os.path.expanduser("~/Library/Application Support/Google/Chrome/Local State")
+for k, v in json.load(open(p, encoding="utf-8"))["profile"]["info_cache"].items():
+    print(f"{k}\t{v.get('name', '')}")
