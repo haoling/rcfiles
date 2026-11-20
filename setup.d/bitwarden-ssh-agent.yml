@@ -1,0 +1,11 @@
+description: SSH の鍵を Bitwarden デスクトップアプリの SSH エージェントから使う（~/.zshrc の最後で SSH_AUTH_SOCK を設定する）
+
+# ソケットの場所は macOS の Bitwarden デスクトップアプリのもの
+# Bitwarden を後から起動しても使えるよう、ソケットの有無は確かめずに設定する
+# .zshrc_rcfiles の gpg-agent-start を実行すると、gpg-agent のソケットに上書きされる
+os: darwin
+
+file: .zshrc
+where: bottom
+marker: .bitwarden-ssh-agent.sock
+text: 'export SSH_AUTH_SOCK="$HOME/.bitwarden-ssh-agent.sock"'
